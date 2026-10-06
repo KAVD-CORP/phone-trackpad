@@ -1,0 +1,12 @@
+{
+  "name": "phone-trackpad",
+  "private": true,
+  "type": "module",
+  "description": "Phone as a wireless trackpad. The tested piece today is the packet codec.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/protocol/wire.test.ts"
+  }
+}

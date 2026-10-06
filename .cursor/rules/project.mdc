@@ -1,0 +1,12 @@
+---
+description: Phone Trackpad rules (Flutter phone, Tauri desktop, UDP motion totals)
+alwaysApply: true
+---
+
+Read `AGENTS.md` first.
+
+- Phone is Flutter. Desktop is Tauri 2 on Windows and macOS. Input is `SendInput` or `CGEvent` only.
+- Wire format is `docs/PROTOCOL.md`. Motion totals, not text and not absolute coordinates.
+- A lost motion packet is recovered by the next total. Clicks go on TCP.
+- No input without a paired session. Do not hide the connected state.
+- Run `npm test` before finishing. Run the app's own tests once it exists.

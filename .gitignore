@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+apps/desktop/src-tauri/target/
+
+apps/phone/.dart_tool/
+apps/phone/build/
+apps/phone/.flutter-plugins*
+apps/phone/.packages
+
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
