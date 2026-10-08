@@ -1,0 +1,14 @@
+[package]
+name = "fake-phone"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Scripted MOVE/CLICK sender for testing the desktop service without a phone"
+
+[[bin]]
+name = "fake-phone"
+path = "src/main.rs"
+
+[dependencies]
+trackpad-core = { path = "../../crates/trackpad-core" }
+trackpad-desktop = { path = "../../crates/trackpad-desktop" }

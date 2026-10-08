@@ -1,0 +1,23 @@
+target/
+# Flutter / Dart
+apps/mobile/.dart_tool/
+apps/mobile/build/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+# Node / Vite / Tauri
+node_modules/
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+# Rust
+target/
+**/target/
+# (Cargo.lock is committed: the workspace ships binaries.)
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+# Local tooling state (session metadata, not source)
+.freebuff/

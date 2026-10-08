@@ -1,0 +1,21 @@
+[package]
+name = "trackpad-desktop-app"
+version = "0.0.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", features = ["tray-icon", "image-png"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.143" }
+trackpad-desktop = { path = "../../../crates/trackpad-desktop" }
+trackpad-core = { path = "../../../crates/trackpad-core" }
+# Pinned 2026-10 after checking crates.io max stable versions.
+tauri-plugin-autostart = "=2.7.0" # start on login (+ settings toggle)
+tauri-plugin-single-instance = "=2.5.2" # second launch focuses the window
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

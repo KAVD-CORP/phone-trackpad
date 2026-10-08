@@ -1,0 +1,33 @@
+[package]
+name = "trackpad-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Desktop service: discovery, sessions, trust store, input injection"
+
+[dependencies]
+trackpad-core = { path = "../trackpad-core" }
+# Pinned 2026-10 after checking crates.io max stable versions.
+mdns-sd = "=0.21.5" # LAN discovery advertising (_wptrackpad._tcp)
+keyring = "=4.2.0" # OS credential store for the device private key
+qrcode = "=0.14.1" # pairing QR rendering (SVG, no image pipeline needed)
+getrandom = "=0.4.3" # web session tokens (same pin as trackpad-core)
+hkdf = "=0.13.0" # QR-secret-to-PSK stretch (same pin as trackpad-core)
+sha2 = "=0.11.0" # hash for HKDF (same pin as trackpad-core)
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.143" }
+thiserror = "=2.0.21" # typed errors (same pin as trackpad-core)
+base64 = "=0.23.1" # key storage encoding (pinned, tiny)
+
+[target.'cfg(windows)'.dependencies]
+# Pinned after checking docs.rs (windows 0.62.2, Oct 2025) + Microsoft Learn
+# SendInput/INPUT/MOUSEINPUT reference. Only the input API surface is enabled.
+windows = { version = "=0.62.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[lib]
+name = "trackpad_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "trackpad-service"
+path = "src/bin/service.rs"
