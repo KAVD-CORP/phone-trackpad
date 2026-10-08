@@ -1,9 +1,5 @@
 # Phone app
 
-Not created yet. Phase 0, from this directory, on the Flutter stable channel:
+The Flutter mobile application implementation (iOS and Android) is located in [`apps/mobile/`](../mobile/).
 
-```bash
-flutter create . --project-name phone_trackpad --org com.kavd.phonetrackpad --platforms android,ios
-```
-
-The Dart codec must round-trip the golden bytes in `tests/protocol/wire.test.ts`.
+See `apps/mobile/README.md` for project structure, gesture engine, session management, and `flutter_rust_bridge` FFI bindings.

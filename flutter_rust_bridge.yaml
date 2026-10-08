@@ -1,0 +1,9 @@
+# flutter_rust_bridge codegen (v2.13.0, pinned to the crate + Dart package).
+# Run from the repo root: flutter_rust_bridge_codegen generate
+rust_input: crate::api
+rust_root: crates/trackpad-bridge
+dart_output: apps/mobile/lib/src/rust/api.dart
+dart_entrypoint_class_name: RustLib
+rust_features: []
+# No c_output: mobile .so/.dylib packaging is a Phase 5 (store-build) task.
+# Windows FFI smoke test loads target/debug/trackpad_bridge.dll directly.

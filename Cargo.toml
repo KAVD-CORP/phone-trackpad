@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/trackpad-core",
+  "crates/trackpad-desktop",
+  "crates/trackpad-bridge",
+  "tools/latency-harness",
+  "tools/fake-phone",
+]
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Wireless Phone Trackpad"]

@@ -1,0 +1,21 @@
+[package]
+name = "trackpad-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared protocol, framing, crypto, pairing state machine (no I/O assumptions)"
+
+[dependencies]
+thiserror = "=2.0.21"
+# Pinned 2026-10 after checking crates.io max stable versions.
+snow = "=0.10.0" # Noise handshakes (XXpsk3 pairing, XX reconnect)
+chacha20poly1305 = "=0.11.0" # UDP session AEAD
+spake2 = "=0.4.0" # 6-digit short-code PAKE
+hkdf = "=0.13.0" # session-key derivation from the Noise handshake hash
+sha2 = "=0.11.0" # hash for HKDF
+base64 = "=0.23.1" # QR payload text encoding
+getrandom = "=0.4.3" # pairing-secret randomness
+
+[lib]
+name = "trackpad_core"
+path = "src/lib.rs"

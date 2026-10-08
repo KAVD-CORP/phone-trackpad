@@ -1,15 +1,35 @@
-node_modules/
-dist/
+# Rust build artifacts
 target/
+**/target/
 apps/desktop/src-tauri/target/
 
+# Node / Vite / Tauri
+node_modules/
+dist/
+apps/desktop/node_modules/
+apps/desktop/dist/
+
+# Flutter / Dart (apps/mobile & apps/phone)
+apps/mobile/.dart_tool/
+apps/mobile/build/
+apps/mobile/.flutter-plugins*
+apps/mobile/.packages
 apps/phone/.dart_tool/
 apps/phone/build/
 apps/phone/.flutter-plugins*
 apps/phone/.packages
 
+# OS / Editor
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
 *.log
+
+# Environment variables
 .env
 .env.*
 !.env.example
+
+# Local tooling state
+.freebuff/

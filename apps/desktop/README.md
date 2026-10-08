@@ -1,5 +1,23 @@
-# Desktop agent
+# Desktop companion (Tauri 2)
 
-Not created yet. Phase 0 creates a Tauri 2 app here. Rust is not required to run `npm test` at the repo root.
+Tauri 2 backend (`src-tauri/`, Rust) + React+Vite UI (`src/`).
 
-The Rust codec must round-trip the golden bytes in `tests/protocol/wire.test.ts`. The webview must not call `SendInput` or `CGEvent`. Those calls live in the native adapter.
+The desktop companion receives input and injects cursor movement and clicks into the OS via native adapters (`SendInput` on Windows, `CGEvent` on macOS). The webview inside Tauri handles UI, settings, and pairing—it does not directly invoke OS injection APIs.
+
+Pinned: Tauri `2.2.7`, `tauri-build 2.2.3`, React `18.3.1`, Vite `6.3.5`, TS `5.6.3`, Node `22.17.1 LTS` (root `.nvmrc`).
+
+## Run web UI only (no Rust needed)
+
+```powershell
+cd apps/desktop
+npm install
+npm run build
+```
+
+## Full Tauri run (needs Rust 1.89.0+ + WebView2 on Windows)
+
+```powershell
+cd apps/desktop
+npm install
+npx tauri dev
+```

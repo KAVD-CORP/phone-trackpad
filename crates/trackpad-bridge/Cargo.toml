@@ -1,0 +1,22 @@
+[package]
+name = "trackpad-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "flutter_rust_bridge surface for mobile (phone uses the same trackpad-core)"
+
+[dependencies]
+trackpad-core = { path = "../trackpad-core" }
+flutter_rust_bridge = "=2.13.0"
+hkdf = "=0.13.0" # QR-secret-to-PSK stretch (same pin as trackpad-core)
+sha2 = "=0.11.0" # hash for HKDF (same pin as trackpad-core)
+
+[lib]
+name = "trackpad_bridge"
+path = "src/lib.rs"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[lints.rust]
+# The #[frb] macro expands to code gated on cfg(frb_expand), which only the
+# codegen driver sets. Declare it so the lint stays on for everything else.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

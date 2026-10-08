@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Phone Trackpad</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: #141518; color: #eceef1;
+    font-family: -apple-system, system-ui, sans-serif; font-size: 15px;
+    display: flex; flex-direction: column; overflow: hidden;
+    touch-action: none; overscroll-behavior: none; user-select: none;
+    -webkit-user-select: none;
+  }
+  #bar {
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    font-size: 13px; color: #a3a7ae; text-align: center; flex: none;
+  }
+  #bar.live { color: #4ade80; }
+  #pad {
+    flex: 1; margin: 0 12px calc(12px + env(safe-area-inset-bottom));
+    border: 1px solid #2e3138; border-radius: 16px; background: #1e2024;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; color: #a3a7ae; padding: 20px;
+  }
+  #gate {
+    position: fixed; inset: 0; background: #141518; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 32px;
+  }
+  #gate input {
+    font-size: 28px; letter-spacing: 8px; text-align: center; width: 220px;
+    padding: 10px; border-radius: 12px; border: 1px solid #2e3138;
+    background: #1e2024; color: #fff;
+  }
+  #gate button {
+    font-size: 16px; font-weight: 600; padding: 12px 28px; border-radius: 12px;
+    border: none; background: #2563eb; color: #fff;
+  }
+  #gate .err { color: #f26d6d; min-height: 20px; font-size: 14px; }
+  #gate .hint { color: #a3a7ae; font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="bar">Phone Trackpad</div>
+<div id="pad">Drag to move &middot; tap to click<br>Two fingers: tap = right click, drag = scroll<br>Three-finger tap = middle click</div>
+<div id="gate">
+  <div style="font-size:18px;font-weight:650">Pair this browser</div>
+  <div class="hint">On the computer: Phone Trackpad &rarr; “Browser code”.<br>Type the 6-digit code here. Trusted Wi-Fi only.</div>
+  <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="––––––">
+  <button id="go">Connect</button>
+  <div class="err" id="err"></div>
+</div>
+<script>
+'use strict';
+// Thresholds mirror apps/mobile/lib/gesture.dart.
+const TAP_MS = 200, TAP_PX = 12, HOLD_MS = 250, SLOP_PX = 10, DBL_MS = 350, DBL_PX = 24;
+let token = null, seq = 0;
+let threeTap = false, threeT0 = 0, threeTravel = 0;
+const bar = document.getElementById('bar');
+const pad = document.getElementById('pad');
+
+async function post(path, obj) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(obj),
+    keepalive: false,
+  });
+  return r.json();
+}
+
+document.getElementById('go').onclick = async () => {
+  const pin = document.getElementById('pin').value.trim();
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try {
+    const r = await post('/api/pair', { pin });
+    if (!r.ok) { err.textContent = 'Code rejected. Check it and try again.'; return; }
+    token = r.token; seq = 0;
+    document.getElementById('gate').style.display = 'none';
+    bar.textContent = 'Connected — touch to move';
+    bar.classList.add('live');
+  } catch (e) {
+    err.textContent = 'Could not reach the computer.';
+  }
+};
+
+// QR scans land here with the code in the fragment (never sent on the wire).
+window.addEventListener('load', () => {
+  const m = location.hash.match(/^#(\d{6})$/);
+  if (m) {
+    document.getElementById('pin').value = m[1];
+    document.getElementById('go').click();
+  }
+});
+
+function send(msgs) {
+  if (!token || !msgs.length) return;
+  post('/api/input', { token, seq: seq++, msgs }).catch(() => {});
+}
+
+// ---- gesture engine (single + two finger) ----
+const fingers = new Map(); // pointerId -> {x,y,t0,travel}
+let lastTapT = -1e9, lastTapX = 0, lastTapY = 0;
+let maybeDrag = false, dragging = false, scrolling = false;
+let twoT0 = 0, twoTravel = 0, remX = 0, remY = 0, noTap = false;
+
+function now() { return performance.now(); }
+
+pad.addEventListener('pointerdown', (e) => {
+  pad.setPointerCapture(e.pointerId);
+  fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, t0: now(), travel: 0 });
+  if (fingers.size === 3) {
+    // Three fingers: middle-click candidate. Cancel one/two-finger state;
+    // all three lifts are consumed by the tap logic below.
+    maybeDrag = false; scrolling = false; noTap = true;
+    threeTap = true; threeT0 = now(); threeTravel = 0;
+    if (dragging) { dragging = false; send([{ t: 'up', b: 0 }]); }
+    return;
+  }
+  if (fingers.size > 2) { fingers.clear(); maybeDrag = false; scrolling = false; noTap = true; threeTap = false; return; }
+  if (fingers.size === 2) {
+    maybeDrag = false; scrolling = true; twoT0 = now(); twoTravel = 0; noTap = true;
+    if (dragging) { dragging = false; send([{ t: 'up', b: 0 }]); }
+    return;
+  }
+  const t = now();
+  maybeDrag = (t - lastTapT) <= DBL_MS &&
+    Math.abs(e.clientX - lastTapX) <= DBL_PX && Math.abs(e.clientY - lastTapY) <= DBL_PX;
+  noTap = false; dragging = false; remX = 0; remY = 0;
+  fingers.get(e.pointerId).anchor = { x: e.clientX, y: e.clientY, t };
+  setTimeout(() => {
+    if (maybeDrag && !dragging && fingers.size === 1) {
+      maybeDrag = false; dragging = true;
+      send([{ t: 'down', b: 0 }]);
+    }
+  }, HOLD_MS);
+});
+
+pad.addEventListener('pointermove', (e) => {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  const dx = e.clientX - f.x, dy = e.clientY - f.y;
+  f.x = e.clientX; f.y = e.clientY; f.travel += Math.abs(dx) + Math.abs(dy);
+  if (threeTap) { threeTravel += Math.abs(dx) + Math.abs(dy); return; }
+  if (scrolling) {
+    twoTravel += Math.abs(dx) + Math.abs(dy);
+    const ix = Math.trunc(dx / 2), iy = Math.trunc(dy / 2);
+    if (ix || iy) send([{ t: 'scroll', dx: ix, dy: iy }]);
+    return;
+  }
+  if (fingers.size !== 1) return;
+  if (maybeDrag && !dragging) {
+    if (f.travel > SLOP_PX) { maybeDrag = false; dragging = true; send([{ t: 'down', b: 0 }]); }
+    else return;
+  }
+  const x = dx + remX, y = dy + remY;
+  const ix = Math.trunc(x), iy = Math.trunc(y);
+  remX = x - ix; remY = y - iy;
+  if (ix || iy) send([{ t: 'move', dx: ix, dy: iy }]);
+});
+
+function up(e) {
+  const f = fingers.get(e.pointerId);
+  fingers.delete(e.pointerId);
+  if (!f) return;
+  const t = now();
+  if (threeTap) {
+    // Decide on the last of the three lifts.
+    if (fingers.size !== 0) return;
+    threeTap = false;
+    if ((t - threeT0) <= TAP_MS && threeTravel <= TAP_PX * 2) {
+      send([{ t: 'click', b: 2 }]);
+    }
+    return;
+  }
+  if (scrolling && fingers.size < 2) {
+    scrolling = false;
+    const quick = (t - twoT0) <= TAP_MS && twoTravel <= TAP_PX * 2;
+    if (quick) send([{ t: 'click', b: 1 }]);
+    return;
+  }
+  if (fingers.size !== 0 || scrolling) return;
+  if (dragging) { dragging = false; maybeDrag = false; send([{ t: 'up', b: 0 }]); return; }
+  if (noTap) { noTap = false; maybeDrag = false; return; }
+  if (maybeDrag) {
+    maybeDrag = false;
+    if (t - f.anchor.t <= TAP_MS && f.travel <= TAP_PX) {
+      lastTapT = t; lastTapX = e.clientX; lastTapY = e.clientY;
+      send([{ t: 'click', b: 0 }]);
+    }
+    return;
+  }
+  const dt = t - f.anchor.t;
+  if (dt <= TAP_MS && Math.abs(e.clientX - f.anchor.x) <= TAP_PX && Math.abs(e.clientY - f.anchor.y) <= TAP_PX) {
+    lastTapT = t; lastTapX = e.clientX; lastTapY = e.clientY;
+    send([{ t: 'click', b: 0 }]);
+  }
+}
+pad.addEventListener('pointerup', up);
+pad.addEventListener('pointercancel', up);
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('dblclick', (e) => e.preventDefault());
+</script>
+</body>
+</html>
