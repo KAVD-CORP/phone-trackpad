@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show ExternalLibrary;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'discovery.dart';
@@ -6,9 +9,14 @@ import 'session.dart';
 import 'trackpad_screen.dart';
 import 'src/rust/api.dart/frb_generated.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init();
+  // This app has exactly one FRB library, statically linked into Runner on iOS.
+  await RustLib.init(
+    externalLibrary: Platform.isIOS
+        ? ExternalLibrary.process(iKnowHowToUseIt: true)
+        : null,
+  );
   final sessions = SessionManager();
   await sessions.init();
   runApp(TrackpadApp(sessions: sessions));

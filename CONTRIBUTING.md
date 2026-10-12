@@ -14,8 +14,8 @@ This repository is public. Pull requests are the way in, including from people w
 ## Local setup
 
 - Node.js 22 or newer (`npm test`)
-- Flutter stable, once you work on `apps/phone`
-- Rust stable and the Tauri prerequisites, once you work on `apps/desktop`
+- Flutter 3.35.4 for `apps/mobile`; see `docs/iphone-sideload.md` for iOS setup
+- Rust 1.90.0 and the Tauri prerequisites, once you work on `apps/desktop`
 - Windows for the first input adapter. macOS for the second. Neither replaces the other.
 
 ```bash
