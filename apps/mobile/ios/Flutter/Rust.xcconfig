@@ -1,0 +1,8 @@
+// Rust is linked into Runner; Dart resolves its FFI exports from the process.
+OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -force_load "$(BUILT_PRODUCTS_DIR)/libtrackpad_bridge.a" -lc++ -framework Security -framework SystemConfiguration
+DEAD_CODE_STRIPPING = NO
+STRIP_INSTALLED_PRODUCT = NO
+CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements
+// Pinned Flutter verifies all simulator slices in one lipo invocation.
+// Xcode 27 rejects that invocation; build the current Mac's simulator slice.
+ARCHS[sdk=iphonesimulator*] = $(NATIVE_ARCH_ACTUAL)

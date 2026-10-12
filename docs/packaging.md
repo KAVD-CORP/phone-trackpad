@@ -51,9 +51,13 @@ remaining engineering when macOS returns).
 - **Android:** `cd apps/mobile && flutter build apk --release`
   (needs the Android SDK + NDK for the Rust `.so`; FRB docs cover the
   `cargo-ndk` wiring — budgeted for the store-build pass).
-- **iOS:** needs a Mac with Xcode + paid Apple Developer account:
-  `flutter build ipa`. Until then, sideload via the MacBook with a free
-  Apple ID (7-day certificate) for device testing.
+- **iOS:** `cd apps/mobile && flutter build ipa --release` on a Mac with full
+  Xcode, CocoaPods, Flutter 3.35.4 and Rust 1.90.0 plus the iOS Rust targets.
+  Rust is built and linked by Xcode for Debug, Profile and Release. Configure
+  signing first using [the iPhone guide](iphone-sideload.md). A paid account is
+  required for App Store/TestFlight distribution; a free Personal Team supports
+  temporary local device testing. Archive/signing/distribution remain unverified
+  until run with a real team and Xcode installation.
 - Permissions to keep declared: local network + Bonjour (iOS), multicast
   + camera (Android). Camera is only used for the QR scan screen.
 
