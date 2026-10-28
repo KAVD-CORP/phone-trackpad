@@ -6,6 +6,8 @@
 //! the macOS injector land in later phases.
 
 pub mod discovery;
+pub mod handsfree;
+pub mod keyboard;
 pub mod pairing_client;
 pub mod pairing_server;
 pub mod qr;
@@ -36,6 +38,13 @@ pub trait InputInjector {
     fn button_down(&mut self, button: u8);
     /// Release a held button. Unknown ids are ignored.
     fn button_up(&mut self, button: u8);
+    /// Type Unicode text. Newlines are not included; the caller sends Enter
+    /// as a key combo. Implemented with `SendInput` unicode events on Windows.
+    fn type_text(&mut self, text: &str);
+    /// Press a modifier chord and one key, then release them.
+    fn key_combo(&mut self, combo: &crate::keyboard::KeyCombo);
+    /// Left double click.
+    fn click_double(&mut self);
 
     /// Test hook: the mock injector returns itself for assertions.
     /// Real injectors return `None`.
@@ -62,6 +71,12 @@ pub struct MockInjector {
     /// Total down / up events (including redundant repeats).
     pub downs: u32,
     pub ups: u32,
+    /// Characters passed to [`InputInjector::type_text`].
+    pub typed: String,
+    /// Canonical key combos, such as `ctrl+enter`.
+    pub combos: Vec<String>,
+    /// Left double clicks. These are not also counted in [`Self::clicks`].
+    pub double_clicks: u32,
 }
 
 impl InputInjector for MockInjector {
@@ -99,6 +114,18 @@ impl InputInjector for MockInjector {
             self.held &= !(1 << button);
         }
         self.ups += 1;
+    }
+
+    fn type_text(&mut self, text: &str) {
+        self.typed.push_str(text);
+    }
+
+    fn key_combo(&mut self, combo: &crate::keyboard::KeyCombo) {
+        self.combos.push(combo.canonical());
+    }
+
+    fn click_double(&mut self) {
+        self.double_clicks += 1;
     }
 
     fn as_mock(&mut self) -> Option<&mut MockInjector> {
@@ -287,6 +314,145 @@ impl InputInjector for WindowsInjector {
         if let Err(e) = Self::send_mouse(0, 0, flag) {
             eprintln!("trackpad-service: SendInput(button {b} up) failed: {e}");
         }
+    }
+
+    fn type_text(&mut self, text: &str) {
+        send_unicode(text);
+    }
+
+    fn key_combo(&mut self, combo: &crate::keyboard::KeyCombo) {
+        send_combo(combo);
+    }
+
+    fn click_double(&mut self) {
+        self.click_left();
+        self.click_left();
+    }
+}
+
+#[cfg(windows)]
+fn send_unicode(text: &str) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+    for unit in text.encode_utf16() {
+        let down = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: unit,
+                    dwFlags: KEYEVENTF_UNICODE,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+        let up = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: unit,
+                    dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+        let sent = unsafe { SendInput(&[down, up], std::mem::size_of::<INPUT>() as i32) };
+        if sent != 2 {
+            eprintln!(
+                "trackpad-service: SendInput(unicode) failed: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn send_combo(combo: &crate::keyboard::KeyCombo) {
+    use crate::keyboard::Key;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_HOME, VK_LEFT,
+        VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB,
+        VK_UP,
+    };
+    let key = match combo.key {
+        Key::Enter => VK_RETURN,
+        Key::Tab => VK_TAB,
+        Key::Escape => VK_ESCAPE,
+        Key::Backspace => VK_BACK,
+        Key::Delete => VK_DELETE,
+        Key::Space => VK_SPACE,
+        Key::Left => VK_LEFT,
+        Key::Right => VK_RIGHT,
+        Key::Up => VK_UP,
+        Key::Down => VK_DOWN,
+        Key::Home => VK_HOME,
+        Key::End => VK_END,
+        Key::PageUp => VK_PRIOR,
+        Key::PageDown => VK_NEXT,
+        Key::Letter(c) => VIRTUAL_KEY(c.to_ascii_uppercase() as u16),
+        Key::Digit(c) => VIRTUAL_KEY(c as u16),
+        Key::Function(n) => VIRTUAL_KEY(VK_F1.0 + u16::from(n - 1)),
+    };
+    let mut mods = Vec::new();
+    if combo.ctrl {
+        mods.push(VK_CONTROL);
+    }
+    if combo.alt {
+        mods.push(VK_MENU);
+    }
+    if combo.shift {
+        mods.push(VK_SHIFT);
+    }
+    if combo.win {
+        mods.push(VK_LWIN);
+    }
+    let mut inputs = Vec::new();
+    for vk in &mods {
+        inputs.push(key_input(*vk, false));
+    }
+    inputs.push(key_input(key, false));
+    inputs.push(key_input(key, true));
+    for vk in mods.iter().rev() {
+        inputs.push(key_input(*vk, true));
+    }
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    if sent as usize != inputs.len() {
+        eprintln!(
+            "trackpad-service: SendInput(keys) failed: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(windows)]
+fn key_input(
+    vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY,
+    up: bool,
+) -> windows::Win32::UI::Input::KeyboardAndMouse::INPUT {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+    };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
     }
 }
 

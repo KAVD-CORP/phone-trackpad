@@ -171,6 +171,67 @@ fn web_begin(state: State<AppState>) -> Result<WebPinDto, String> {
     })
 }
 
+#[derive(serde::Serialize)]
+struct HandsfreeDto {
+    running: bool,
+    step: u32,
+    max_steps: u32,
+    transcript: String,
+    detail: String,
+    error: String,
+    paired: bool,
+}
+
+struct HandsfreeParts {
+    handsfree: std::sync::Arc<trackpad_desktop::handsfree::HandsfreeHub>,
+    shared: std::sync::Arc<std::sync::Mutex<trackpad_desktop::pairing_server::PairingShared>>,
+}
+
+fn handsfree_parts(state: &State<AppState>) -> Result<HandsfreeParts, String> {
+    let backend = state.backend.lock().map_err(|e| e.to_string())?;
+    let backend = backend
+        .as_ref()
+        .ok_or_else(|| "service not started".to_string())?;
+    Ok(HandsfreeParts {
+        handsfree: std::sync::Arc::clone(&backend.handsfree),
+        shared: std::sync::Arc::clone(&backend.shared),
+    })
+}
+
+#[tauri::command]
+fn handsfree_status(state: State<AppState>) -> Result<HandsfreeDto, String> {
+    let parts = handsfree_parts(&state)?;
+    let status = parts.handsfree.status();
+    let paired = parts
+        .shared
+        .lock()
+        .map_err(|e| e.to_string())?
+        .live()
+        .is_some_and(|live| live.session_id != 0);
+    Ok(HandsfreeDto {
+        running: status.running,
+        step: status.step,
+        max_steps: status.max_steps,
+        transcript: status.transcript,
+        detail: status.detail,
+        error: status.error,
+        paired,
+    })
+}
+
+#[tauri::command]
+fn handsfree_cancel(state: State<AppState>) -> Result<(), String> {
+    let parts = handsfree_parts(&state)?;
+    parts.handsfree.request_cancel();
+    Ok(())
+}
+
+#[tauri::command]
+fn handsfree_submit(state: State<AppState>, text: String) -> Result<(), String> {
+    let parts = handsfree_parts(&state)?;
+    trackpad_desktop::handsfree::submit_text(&parts.handsfree, &parts.shared, &text)
+}
+
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     let manager = app.autolaunch();
@@ -290,7 +351,10 @@ fn main() {
             revoke_device,
             get_autostart,
             set_autostart,
-            web_begin
+            web_begin,
+            handsfree_status,
+            handsfree_cancel,
+            handsfree_submit
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

@@ -72,6 +72,22 @@ Uint8List bridgeSealButton({
   down: down,
 );
 
+/// Seal a Handsfree TCP body with the phone's UDP session key.
+/// Empty means the frame was rejected (session 0, bad key, or oversized).
+Uint8List bridgeSealHandsfree({
+  required List<int> key,
+  required BigInt session,
+  required BigInt seq,
+  required int kind,
+  required List<int> payload,
+}) => RustLib.instance.api.crateApiBridgeSealHandsfree(
+  key: key,
+  session: session,
+  seq: seq,
+  kind: kind,
+  payload: payload,
+);
+
 Uint8List bridgeSealPing({
   required List<int> key,
   required BigInt session,

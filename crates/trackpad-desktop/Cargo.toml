@@ -18,11 +18,17 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.143" }
 thiserror = "=2.0.21" # typed errors (same pin as trackpad-core)
 base64 = "=0.23.1" # key storage encoding (pinned, tiny)
+# Pinned 2026-10. Blocking client for Muse (Spark + Voice Transcribe).
+ureq = "=3.5.0"
 
 [target.'cfg(windows)'.dependencies]
 # Pinned after checking docs.rs (windows 0.62.2, Oct 2025) + Microsoft Learn
 # SendInput/INPUT/MOUSEINPUT reference. Only the input API surface is enabled.
-windows = { version = "=0.62.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows = { version = "=0.62.2", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [lib]
 name = "trackpad_desktop"

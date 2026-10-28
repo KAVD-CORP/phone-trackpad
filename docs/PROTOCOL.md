@@ -120,3 +120,37 @@ Desktop advertises `<name>._wptrackpad._tcp.local` with TXT `ver=2, udp=<port>, 
 - **Coalescing**: Moves and scrolls accumulate in `Coalescer` and flush every 8 ms to prevent event queue saturation.
 - **ButtonGuard**: Desktop automatically releases any held buttons if session changes or if silence exceeds 500 ms (`SILENCE_TIMEOUT_MS`).
 - **Scroll Accumulation**: 40 px per 120-unit standard OS wheel notch (`ScrollAccum`). Natural scrolling applied sender-side.
+
+---
+
+## 5. Handsfree control (TCP 51516)
+
+Not a motion packet and not a change to the v1 or v2 motion layout. Version 1 of this frame is independent of motion version 1. Keyboard, voice, and cancel are reliable, so they use TCP. The hello is the existing `u16-BE` pairing frame containing the ASCII word `HANDSFREE`. The next frame is `u32-BE length + body`, capped at 1 MiB of audio plus the header and tag.
+
+Cleartext body, little-endian, before encryption (`src/protocol/handsfree.ts`, `crates/trackpad-core/src/handsfree.rs`):
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | u8 | `H` (0x48) |
+| 1 | u8 | `F` (0x46) |
+| 2 | u8 | version = 1 |
+| 3 | u8 | kind |
+| 4 | u64 | session (never 0) |
+| 12 | u64 | sequence (never 0, starts at 1) |
+| 20 | bytes | payload |
+
+| Kind | Code | Payload |
+|---|---|---|
+| Voice | 1 | WAV bytes, max 1 MiB. Muse Voice Transcribe (`muse-voice-transcribe-1.0`) |
+| Command | 2 | UTF-8 text, max 8 KiB. Already text; Spark plans it |
+| TypeText | 3 | UTF-8 to type. Not a model call |
+| KeyCombo | 4 | UTF-8 such as `ctrl+enter`. Not a model call |
+| Cancel | 5 | empty |
+
+The sealed body keeps that 20-byte header as AAD and appends ChaCha20-Poly1305 ciphertext and a 16-byte tag. The key is `HKDF-SHA256(phone UDP key, info = "wpt-handsfree-phone-v1")`. The nonce is `0x01 || seq`, so it cannot collide with a UDP nonce (`0x00 || seq`) even if the sequences overlap. A replay of the same session and sequence is ignored. The desktop reply is a plain UTF-8 `u32` frame on the same connection.
+
+Golden cleartext (session `0x0102030405060708`, seq 7, kind Command, payload `hi`):
+
+```text
+48 46 01 02 08 07 06 05 04 03 02 01 07 00 00 00 00 00 00 00 68 69
+```

@@ -4,7 +4,9 @@
 //! thread with per-step read timeouts (a stalled peer can never wedge the
 //! server). Frames are `u16-BE length + bytes`, capped at 8 KiB.
 //!
-//! Client hello selects the flow: `PAIR-QR`, `PAIR-SPAKE2`, `RECONNECT`.
+//! Client hello selects the flow: `PAIR-QR`, `PAIR-SPAKE2`, `RECONNECT`,
+//! `HANDSFREE`. Handsfree then reads one `u32-BE` frame (voice and keyboard
+//! do not fit in the 8 KiB pairing frame).
 //! Pairing ends in a [`PendingApproval`] parked for the UI; the handler
 //! thread blocks (bounded) until approve/deny/timeout, then writes the
 //! final frame. Reconnect needs no approval: a trusted static key is
@@ -99,6 +101,29 @@ impl PairingShared {
             trust,
             now_ms: crate::now_ms,
         }
+    }
+
+    /// In-memory live session for Handsfree tests. Does not touch the disk.
+    #[cfg(test)]
+    pub fn test_publish_live(&mut self, peer: [u8; 32], keys: UdpKeys, session_id: u64) {
+        self.trust.add(TrustedPeer {
+            name: "phone".into(),
+            pubkey: peer,
+            first_seen_ms: 1,
+            last_seen_ms: 1,
+        });
+        self.live = Some(LiveSession {
+            peer_pubkey: peer,
+            peer_name: "phone".into(),
+            keys,
+            session_id,
+            started_ms: 1,
+        });
+    }
+
+    #[cfg(test)]
+    pub fn test_parts(now: u64) -> (Self, Vec<u8>, Vec<u8>) {
+        Self::test(now)
     }
 
     #[cfg(test)]
@@ -287,6 +312,7 @@ pub fn read_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
 pub fn handle_connection(
     stream: TcpStream,
     shared: Arc<Mutex<PairingShared>>,
+    handsfree: Arc<crate::handsfree::HandsfreeHub>,
 ) -> std::io::Result<()> {
     stream.set_read_timeout(Some(STEP_TIMEOUT))?;
     let mut stream = stream;
@@ -297,6 +323,7 @@ pub fn handle_connection(
         "PAIR-QR" => pair_qr(stream, shared, peer),
         "PAIR-SPAKE2" => pair_spake2(stream, shared, peer),
         "RECONNECT" => reconnect(stream, shared, peer),
+        "HANDSFREE" => crate::handsfree::accept(stream, shared, handsfree),
         _ => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "unknown hello",
@@ -617,13 +644,18 @@ fn sanitize_name(raw: &[u8]) -> String {
 }
 
 /// Accept loop. Runs on its own thread; each connection gets a thread.
-pub fn serve(listener: TcpListener, shared: Arc<Mutex<PairingShared>>) {
+pub fn serve(
+    listener: TcpListener,
+    shared: Arc<Mutex<PairingShared>>,
+    handsfree: Arc<crate::handsfree::HandsfreeHub>,
+) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let shared = Arc::clone(&shared);
+                let handsfree = Arc::clone(&handsfree);
                 std::thread::spawn(move || {
-                    if let Err(e) = handle_connection(stream, shared) {
+                    if let Err(e) = handle_connection(stream, shared, handsfree) {
                         eprintln!("pairing: connection failed: {e}");
                     }
                 });
@@ -653,7 +685,8 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         let s = Arc::clone(&shared);
-        std::thread::spawn(move || serve(listener, s));
+        let handsfree = Arc::new(crate::handsfree::HandsfreeHub::new());
+        std::thread::spawn(move || serve(listener, s, handsfree));
         // Fake clock stays valid for the TTL; real threads only park.
         (shared, addr)
     }

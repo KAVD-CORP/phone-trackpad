@@ -29,7 +29,7 @@ No React Native. No Electron. No .NET host. No browser trackpad. No kernel drive
 4. **The webview does not move the cursor.** Tauri's UI is settings and pairing. Rust calls the OS.
 5. **Two ports, one byte layout.** If you change `docs/PROTOCOL.md`, you change `src/protocol`, the Node tests, and the Dart and Rust encoders in the same PR.
 6. **Ask for macOS Accessibility. Do not skip it and do not hide the connected state.**
-7. **Keyboard, media keys, and off-LAN control are out** until an ADR adds them.
+7. **Media keys and off-LAN control are out** until an ADR adds them. Keyboard text and key combos are allowed by ADR-0005, on the existing `SendInput` / `CGEvent` path, as TCP control, never as UDP motion.
 8. **The first slice is Android + Windows.** Do not block it on iOS or macOS. Do not design it so those two require a rewrite.
 
 ## Conventions

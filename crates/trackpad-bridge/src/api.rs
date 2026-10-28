@@ -144,6 +144,22 @@ pub fn bridge_seal_button(key: Vec<u8>, session: u64, seq: u64, button: u8, down
     seal_checked(&key, session, seq, msg)
 }
 
+/// Seal a Handsfree TCP body with the phone's UDP session key.
+/// Empty means the frame was rejected (session 0, bad key, or oversized).
+#[frb(sync)]
+pub fn bridge_seal_handsfree(
+    key: Vec<u8>,
+    session: u64,
+    seq: u64,
+    kind: u8,
+    payload: Vec<u8>,
+) -> Vec<u8> {
+    let Ok(key) = <[u8; SESSION_KEY_LEN]>::try_from(key) else {
+        return Vec::new();
+    };
+    trackpad_core::handsfree::seal(&key, session, seq, kind, &payload).unwrap_or_default()
+}
+
 #[frb(sync)]
 pub fn bridge_seal_ping(key: Vec<u8>, session: u64, seq: u64, timestamp_ms: u64) -> Vec<u8> {
     seal_checked(
@@ -575,6 +591,16 @@ mod tests {
     fn qr_decode_bridge_validates() {
         let out = bridge_qr_decode("not-a-qr".to_string(), 0);
         assert!(!out.ok);
+    }
+
+    #[test]
+    fn seal_handsfree_round_trip_and_rejects_session_zero() {
+        let keys = derive_udp_keys(b"handsfree-bridge").expect("keys");
+        let sealed = bridge_seal_handsfree(keys.phone_key.to_vec(), 4, 2, 3, b"Hi".to_vec());
+        assert!(!sealed.is_empty());
+        let opened = trackpad_core::handsfree::open(&keys.phone_key, &sealed).expect("open");
+        assert_eq!(opened.payload, b"Hi");
+        assert!(bridge_seal_handsfree(keys.phone_key.to_vec(), 0, 1, 3, b"x".to_vec()).is_empty());
     }
 
     #[test]

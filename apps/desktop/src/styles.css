@@ -199,6 +199,14 @@ button.danger-ghost {
   border-left: 4px solid var(--accent);
 }
 
+.handsfree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
 .pending .row {
   display: flex;
   align-items: center;
