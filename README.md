@@ -71,6 +71,23 @@ flutter analyze
 flutter test
 ```
 
+## Handsfree
+
+Handsfree turns a paired phone into a voice and keyboard input for the PC. The manual trackpad is unchanged: motion is still cumulative UDP, and clicks still do not ride that path. A command is a separate TCP frame (ADR-0005).
+
+1. Pair the phone the way you already do.
+2. Export a Meta Model API key before starting the desktop app. The process reads `META_API_KEY`, then `MODEL_API_KEY` (the name in the [Meta quickstart](https://dev.meta.ai/docs/quickstart)). Copy `.env.example` to `.env` in the working directory if you want the desktop to pick the key up from a file. Do not commit `.env`.
+3. On the phone, tap the microphone and speak, or type a command and send it. Muse Voice Transcribe (`muse-voice-transcribe-1.0`) turns a WAV into text. Muse Spark (`muse-spark-1.3`) then calls move, click, scroll, and type tools through the existing injector. The desktop window shows the step and a Cancel button. The phone has Cancel too. The loop stops after 8 tool calls.
+4. The keyboard sheet types text and combos such as Enter and Ctrl+Enter. Those go through the same injector and do not call the model.
+5. Without a key, set `HANDSFREE_MODEL=mock`. The offline planner runs the same loop so you can demo and test with no network. A missing key does not stop the trackpad; Handsfree reports `META_API_KEY is not set`.
+
+`capture_screenshot` and `segment_screen` are the seam for SAM 3.1 (`sam-3.1` on `POST /v1/responses`). Segmentation is stubbed in this change.
+
+```bash
+npm test
+cargo test --workspace
+```
+
 ## Status
 
 Phase 0–5 implementations completed:

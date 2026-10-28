@@ -88,3 +88,7 @@ Measured on 5 GHz Wi-Fi:
 - Rust `1.90.0` (`rust-toolchain.toml`)
 - Flutter `3.35.4` (`.flutter-version`)
 - Node `22.17.1 LTS` (`.nvmrc`)
+
+## 9. Handsfree
+
+A paired phone can send a voice clip or a typed command on TCP. The desktop service transcribes WAV with Muse Voice Transcribe, then Muse Spark calls tools. The tools (`move_pointer`, `click`, `scroll`, `type_text`, `key_combo`) run on the UDP thread's `InputInjector`, so they share the trackpad path and stay off the motion codec. The loop stops at 8 tool calls, or sooner if the user cancels from the phone or the desktop window. `capture_screenshot` and `segment_screen` are the seam for SAM 3.1 (`sam-3.1`); the segmenter stub does not click absolute coordinates.

@@ -63,7 +63,7 @@ If a real device cannot hold that rate, lower the timer. Do not rewrite the UI t
 
 ## 6. What we are not building in the first slice
 
-The brief's roadmap puts a thin slice first: one phone platform, one desktop platform, movement and click. That slice is **Android + Windows**. iOS and macOS are the next platforms, not a rewrite. Keyboard, media keys, presentation mode, clipboard, and control from outside the LAN are later products. They do not get a packet type until an ADR says so.
+The brief's roadmap puts a thin slice first: one phone platform, one desktop platform, movement and click. That slice is **Android + Windows**. iOS and macOS are the next platforms, not a rewrite. Media keys, presentation mode, clipboard, and control from outside the LAN are later products. They do not get a packet type until an ADR says so. Keyboard text and key combos are in scope under ADR-0005, as Handsfree TCP control, not as a motion packet.
 
 ## 7. Team fit
 

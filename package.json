@@ -7,6 +7,6 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test tests/protocol/wire.test.ts"
+    "test": "node --test tests/protocol/wire.test.ts tests/protocol/handsfree.test.ts"
   }
 }

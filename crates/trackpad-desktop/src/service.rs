@@ -396,7 +396,12 @@ pub fn from_hex(s: &str) -> Result<[u8; 32], &'static str> {
 /// The UDP input loop, shared by the standalone binary and the Tauri
 /// backend. Never returns; logs to stderr, never panics on network input.
 /// `open` allows plaintext v1 packets (LAN testing only; default drops).
-pub fn udp_loop(bind: &str, shared: Arc<Mutex<crate::pairing_server::PairingShared>>, open: bool) {
+pub fn udp_loop(
+    bind: &str,
+    shared: Arc<Mutex<crate::pairing_server::PairingShared>>,
+    open: bool,
+    handsfree: Arc<crate::handsfree::HandsfreeHub>,
+) {
     use std::net::UdpSocket;
     let socket = match UdpSocket::bind(bind) {
         Ok(s) => s,
@@ -473,6 +478,7 @@ pub fn udp_loop(bind: &str, shared: Arc<Mutex<crate::pairing_server::PairingShar
         }
         sync_secure(&mut state, &shared, &mut injector);
         state.flush(&mut injector);
+        handsfree.drain(&mut injector);
         for b in state.check_silence(crate::now_ms(), &mut injector) {
             eprintln!("trackpad-service: released stuck button {b} after silence");
         }
@@ -542,6 +548,7 @@ pub fn default_bind() -> String {
 pub struct Backend {
     pub shared: Arc<Mutex<crate::pairing_server::PairingShared>>,
     pub web: Arc<Mutex<crate::web::WebState>>,
+    pub handsfree: Arc<crate::handsfree::HandsfreeHub>,
     _advertiser: Option<crate::discovery::Advertiser>,
 }
 
@@ -568,9 +575,13 @@ pub fn boot(udp_port: u16, tcp_port: u16, mdns: bool) -> Backend {
         udp_port,
         trust,
     )));
+    let handsfree = Arc::new(crate::handsfree::HandsfreeHub::new());
     if let Ok(listener) = std::net::TcpListener::bind(format!("0.0.0.0:{tcp_port}")) {
         let tcp_shared = Arc::clone(&shared);
-        std::thread::spawn(move || crate::pairing_server::serve(listener, tcp_shared));
+        let tcp_handsfree = Arc::clone(&handsfree);
+        std::thread::spawn(move || {
+            crate::pairing_server::serve(listener, tcp_shared, tcp_handsfree)
+        });
     } else {
         eprintln!("trackpad: TCP {tcp_port} busy (another instance?)");
     }
@@ -589,8 +600,9 @@ pub fn boot(udp_port: u16, tcp_port: u16, mdns: bool) -> Backend {
         None
     };
     let udp_shared = Arc::clone(&shared);
+    let udp_handsfree = Arc::clone(&handsfree);
     let bind = format!("0.0.0.0:{udp_port}");
-    std::thread::spawn(move || udp_loop(&bind, udp_shared, false));
+    std::thread::spawn(move || udp_loop(&bind, udp_shared, false, udp_handsfree));
     let web = Arc::new(Mutex::new(crate::web::WebState::new()));
     if let Ok(listener) = std::net::TcpListener::bind(format!("0.0.0.0:{}", crate::web::WEB_PORT)) {
         let web_shared = Arc::clone(&web);
@@ -601,6 +613,7 @@ pub fn boot(udp_port: u16, tcp_port: u16, mdns: bool) -> Backend {
     Backend {
         shared,
         web,
+        handsfree,
         _advertiser: advertiser,
     }
 }

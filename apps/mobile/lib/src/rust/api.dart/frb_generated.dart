@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -538135717;
+  int get rustContentHash => 417228178;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -129,6 +129,14 @@ abstract class RustLibApi extends BaseApi {
     required BigInt session,
     required BigInt seq,
     required int button,
+  });
+
+  Uint8List crateApiBridgeSealHandsfree({
+    required List<int> key,
+    required BigInt session,
+    required BigInt seq,
+    required int kind,
+    required List<int> payload,
   });
 
   Uint8List crateApiBridgeSealMove({
@@ -478,6 +486,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Uint8List crateApiBridgeSealHandsfree({
+    required List<int> key,
+    required BigInt session,
+    required BigInt seq,
+    required int kind,
+    required List<int> payload,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(key, serializer);
+          sse_encode_u_64(session, serializer);
+          sse_encode_u_64(seq, serializer);
+          sse_encode_u_8(kind, serializer);
+          sse_encode_list_prim_u_8_loose(payload, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_8_strict,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiBridgeSealHandsfreeConstMeta,
+        argValues: [key, session, seq, kind, payload],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBridgeSealHandsfreeConstMeta =>
+      const TaskConstMeta(
+        debugName: "bridge_seal_handsfree",
+        argNames: ["key", "session", "seq", "kind", "payload"],
+      );
+
+  @override
   Uint8List crateApiBridgeSealMove({
     required List<int> key,
     required BigInt session,
@@ -494,7 +538,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(seq, serializer);
           sse_encode_i_32(dx, serializer);
           sse_encode_i_32(dy, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -527,7 +571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(session, serializer);
           sse_encode_u_64(seq, serializer);
           sse_encode_u_64(timestampMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -562,7 +606,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(seq, serializer);
           sse_encode_i_32(dx, serializer);
           sse_encode_i_32(dy, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 12)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,

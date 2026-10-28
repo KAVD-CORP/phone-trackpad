@@ -80,4 +80,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Pointer sensitivity'), findsOneWidget);
   });
+
+  testWidgets('keyboard sheet offers enter without covering the pad copy', (tester) async {
+    final sessions = _FakeSessions();
+    final session = LiveSession(
+      computer: TrustedComputer(
+        name: 'pc',
+        host: '127.0.0.1',
+        tcpPort: 51516,
+        udpPort: 51515,
+        serverFp: Uint8List(32),
+      ),
+      phoneKey: Uint8List(32),
+      desktopKey: Uint8List(32),
+      sessionId: BigInt.one,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: TrackpadScreen(sessions: sessions, session: session)),
+    );
+    await tester.pump();
+    expect(find.textContaining('Drag to move'), findsOneWidget);
+    await tester.tap(find.byTooltip('Keyboard'));
+    await tester.pumpAndSettle();
+    expect(find.text('enter'), findsOneWidget);
+    expect(find.text('ctrl+enter'), findsOneWidget);
+  });
 }

@@ -113,7 +113,11 @@ impl WebState {
             .is_some_and(|p| self.now() <= p.expires_at_ms)
     }
 
-    fn take_token(&mut self, pin_text: &str, peer: std::net::SocketAddr) -> Result<[u8; 16], PairingError> {
+    fn take_token(
+        &mut self,
+        pin_text: &str,
+        peer: std::net::SocketAddr,
+    ) -> Result<[u8; 16], PairingError> {
         let now = self.now();
         self.guard.check(now)?;
         let pin = self
@@ -237,10 +241,9 @@ fn handle(mut stream: TcpStream, shared: Arc<Mutex<WebState>>) {
                     .ok()
                     .and_then(|v| v.get("pin")?.as_str().map(|s| s.to_string()));
                 let body = match code {
-                    Some(pin) => match shared
-                        .lock()
-                        .map(|mut s| s.take_token(&pin, stream.peer_addr().unwrap_or_else(|_| stale_peer())))
-                    {
+                    Some(pin) => match shared.lock().map(|mut s| {
+                        s.take_token(&pin, stream.peer_addr().unwrap_or_else(|_| stale_peer()))
+                    }) {
                         Ok(Ok(token)) => format!(r#"{{"ok":true,"token":"{}"}}"#, hex(&token)),
                         _ => r#"{"ok":false,"error":"bad pin"}"#.to_string(),
                     },
@@ -470,9 +473,7 @@ mod tests {
         let display = state.begin().expect("begin");
         let pin = state.pin.as_ref().expect("pin").code.display();
         assert_eq!(display, pin);
-        let token = state
-            .take_token(&pin, stale_peer())
-            .expect("correct pin");
+        let token = state.take_token(&pin, stale_peer()).expect("correct pin");
         (token, pin)
     }
 
@@ -513,9 +514,15 @@ mod tests {
         let mut s = test_state(1000);
         s.begin().expect("begin");
         for _ in 0..3 {
-            assert_eq!(s.take_token("000000", stale_peer()), Err(PairingError::Spake2));
+            assert_eq!(
+                s.take_token("000000", stale_peer()),
+                Err(PairingError::Spake2)
+            );
         }
-        assert_eq!(s.take_token("000000", stale_peer()), Err(PairingError::LockedOut));
+        assert_eq!(
+            s.take_token("000000", stale_peer()),
+            Err(PairingError::LockedOut)
+        );
     }
 
     #[test]
@@ -528,7 +535,10 @@ mod tests {
         assert!(s.session.is_none());
         let _ = token;
         TEST_NOW.with(|t| *t.borrow_mut() = 1000 + WEB_PIN_TTL_MS + 1);
-        assert_eq!(s.take_token("000000", stale_peer()), Err(PairingError::Expired));
+        assert_eq!(
+            s.take_token("000000", stale_peer()),
+            Err(PairingError::Expired)
+        );
     }
 
     fn input_body(token: &[u8; 16], msgs: &str) -> Vec<u8> {
@@ -577,7 +587,6 @@ mod tests {
     }
 
     fn http_roundtrip() {
-        use std::io::{Read, Write};
         let mut s = test_state(9000);
         s.begin().expect("begin");
         let pin = s.pin.as_ref().expect("pin").code.display();
@@ -594,7 +603,6 @@ mod tests {
                 .expect("timeout");
             stream.write_all(req.as_bytes()).expect("write");
             let mut out = Vec::new();
-            let mut buf = [0u8; 4096];
             // One response: read until Content-Length satisfied or close.
             let mut head = Vec::new();
             let mut one = [0u8; 1];

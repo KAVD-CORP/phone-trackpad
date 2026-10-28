@@ -87,8 +87,10 @@ fn main() {
         eprintln!("trackpad-service: cannot bind TCP {tcp_port}: {e}");
         std::process::exit(1);
     });
+    let handsfree = Arc::new(trackpad_desktop::handsfree::HandsfreeHub::new());
     let tcp_shared = Arc::clone(&shared);
-    std::thread::spawn(move || serve(listener, tcp_shared));
+    let tcp_handsfree = Arc::clone(&handsfree);
+    std::thread::spawn(move || serve(listener, tcp_shared, tcp_handsfree));
 
     if mdns {
         match trackpad_desktop::discovery::Advertiser::start(
@@ -122,7 +124,7 @@ fn main() {
 
     // UDP loop runs on a thread; the main thread serves the console REPL.
     let udp_shared = Arc::clone(&shared);
-    let udp_handle = std::thread::spawn(move || udp_loop(&bind, udp_shared, open));
+    let udp_handle = std::thread::spawn(move || udp_loop(&bind, udp_shared, open, handsfree));
     // Browser trackpad (no install): PIN-gated page on WEB_PORT.
     let web = Arc::new(Mutex::new(trackpad_desktop::web::WebState::new()));
     if let Ok(listener) =

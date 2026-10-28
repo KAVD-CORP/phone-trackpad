@@ -15,6 +15,7 @@
 //! PING / PONG `timestamp_ms:u64` (echoed back for RTT measurement).
 
 pub mod crypto;
+pub mod handsfree;
 pub mod pairing;
 
 /// Protocol version. Reject anything else.

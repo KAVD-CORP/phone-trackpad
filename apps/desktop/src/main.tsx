@@ -14,6 +14,15 @@ type Status = {
   live: string | null;
 };
 type Ceremony = { qr_svg: string; short_code: string; expires_at_ms: number };
+type Handsfree = {
+  running: boolean;
+  step: number;
+  max_steps: number;
+  transcript: string;
+  detail: string;
+  error: string;
+  paired: boolean;
+};
 
 function shortKey(key: string): string {
   return key.length > 16 ? `${key.slice(0, 8)}…${key.slice(-8)}` : key;
@@ -71,6 +80,8 @@ function App() {
   const [autostart, setAutostart] = useState<boolean>(false);
   const [bootFailed, setBootFailed] = useState<boolean>(false);
   const [pairingBusy, setPairingBusy] = useState<boolean>(false);
+  const [handsfree, setHandsfree] = useState<Handsfree | null>(null);
+  const [command, setCommand] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -78,6 +89,12 @@ function App() {
       setStatus(s);
       setError('');
     } catch (e) {
+      setError(String(e));
+    }
+    try {
+      setHandsfree(await invoke<Handsfree>('handsfree_status'));
+    } catch (e) {
+      setHandsfree(null);
       setError(String(e));
     }
   }, []);
@@ -169,6 +186,55 @@ function App() {
           ))}
         </div>
       )}
+
+      <div className="card">
+        <h2>Handsfree</h2>
+        <p className="desc">
+          A spoken command from the paired phone is transcribed and turned into
+          pointer, click, scroll, and typing. The trackpad keeps working.
+        </p>
+        <p className="fine" role="status">
+          {handsfree
+            ? `${handsfree.running ? `Running ${handsfree.step}/${handsfree.max_steps}. ` : ''}${handsfree.error || handsfree.detail}`
+            : 'Waiting for the service.'}
+          {handsfree?.transcript ? ` Heard: ${handsfree.transcript}` : ''}
+        </p>
+        <div className="handsfree-row">
+          <input
+            aria-label="Handsfree command"
+            value={command}
+            disabled={!handsfree?.paired || handsfree.running}
+            placeholder={handsfree?.paired ? 'Type a command' : 'Pair a phone first'}
+            onChange={(e) => setCommand(e.target.value)}
+            style={{ flex: 1, padding: 8 }}
+          />
+          <button
+            className="primary"
+            disabled={!handsfree?.paired || handsfree.running}
+            onClick={async () => {
+              try {
+                await invoke('handsfree_submit', { text: command });
+                setError('');
+                refresh();
+              } catch (e) {
+                setError(String(e));
+              }
+            }}
+          >
+            Run
+          </button>
+          <button
+            className="danger-ghost"
+            disabled={!handsfree?.running}
+            onClick={async () => {
+              await invoke('handsfree_cancel');
+              refresh();
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
 
       <div className="card">
         <h2>Add a phone</h2>

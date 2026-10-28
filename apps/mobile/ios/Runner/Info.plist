@@ -53,5 +53,7 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the pairing code on your computer.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speak a Handsfree command. Audio is sent only to the paired computer.</string>
 </dict>
 </plist>
