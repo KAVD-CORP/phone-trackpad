@@ -153,7 +153,7 @@ class _TrackpadScreenState extends State<TrackpadScreen> {
                   child: Text(
                     'Drag to move · tap to click\n'
                     'Two-finger tap: right click · two-finger drag: scroll\n'
-                    'Tap, press-hold and drag to drag items.',
+                    'Hold still, then drag to drag items.',
                     textAlign: TextAlign.center,
                   ),
                 ),

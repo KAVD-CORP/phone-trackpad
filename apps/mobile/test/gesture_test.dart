@@ -223,6 +223,63 @@ void main() {
     );
   });
 
+  test('plain press-hold-drag works without a preceding tap', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['tick', 0, 0, 0, 100], // before dragHoldMs
+      ['tick', 0, 0, 0, 260], // held still past dragHoldMs
+      ['move', 1, 30, 0, 280],
+      ['up', 1, 130, 100, 400],
+    ]);
+    expect(out[0], isNot(const OutClick(buttonLeft)));
+    expect(out.contains(const OutDown(buttonLeft)), isTrue);
+    expect(out.whereType<OutMove>(), isNotEmpty);
+    expect(out.last, const OutUp(buttonLeft));
+  });
+
+  test('a finger already moving stays on cursor duty (no drag)', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['move', 1, 6, 0, 16],
+      ['move', 1, 6, 0, 32],
+      ['tick', 0, 0, 0, 300], // travel 12 > slop: still moving
+      ['move', 1, 6, 0, 316],
+      ['up', 1, 118, 100, 400],
+    ]);
+    expect(out.whereType<OutDown>(), isEmpty);
+    expect(out.whereType<OutUp>(), isEmpty);
+    expect(out.whereType<OutMove>(), isNotEmpty);
+  });
+
+  test('quiet long press acts as press and release (click)', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['tick', 0, 0, 0, 260],
+      ['up', 1, 100, 100, 320],
+    ]);
+    expect(out, [const OutDown(buttonLeft), const OutUp(buttonLeft)]);
+  });
+
+  test('two-finger gesture cancels an engaged hold-drag', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['tick', 0, 0, 0, 260], // drag engaged
+      ['down', 2, 140, 100, 270], // second finger: cancel + scroll
+      ['move', 1, 0, 30, 290],
+      ['move', 2, 0, 30, 300],
+      ['up', 1, 100, 130, 400],
+      ['up', 2, 140, 130, 410],
+    ]);
+    expect(out.whereType<OutDown>(), [const OutDown(buttonLeft)]);
+    expect(out.whereType<OutUp>(), [const OutUp(buttonLeft)]);
+    expect(out.whereType<OutScroll>(), isNotEmpty);
+    expect(out.whereType<OutClick>(), isEmpty);
+  });
+
   test('three fingers are ignored as palm until all lift', () {
     final e = GestureEngine();
     final out = run(e, [

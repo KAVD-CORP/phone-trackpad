@@ -12,7 +12,8 @@
 /// - two-finger tap → [OutClick] right
 /// - three-finger tap → [OutClick] middle
 ///   (through [buttonMiddle]; open links in new tabs, close tabs, etc.)
-/// - tap, re-press + hold/move, release → [OutDown]/[OutMove]/[OutUp]
+/// - press and hold still, or tap then re-press + hold/move, release →
+///   [OutDown]/[OutMove]/[OutUp]
 ///   (optional [TrackpadSettings.dragLock] keeps the button held)
 ///
 /// Multi-touch transitions: a second finger mid-move cancels the one-finger
@@ -316,13 +317,20 @@ class GestureEngine {
   }
 
   /// Periodic check for tap-hold (call ~every 50 ms while touching).
+  /// Any single finger held still past [dragHoldMs] is drag intent: the
+  /// button goes down while the finger sits still, so plain press-hold
+  /// drags work without a preceding tap. A finger already moving past
+  /// [dragSlopPx] keeps normal cursor duty (checked at fire time).
   List<GestureOut> tick(int t) {
-    if (_maybeDrag && !_dragging && _touches.length == 1) {
-      if (t - _downT >= dragHoldMs && _travel <= dragSlopPx) {
-        _maybeDrag = false;
-        _dragging = true;
-        return const [OutDown(buttonLeft)];
-      }
+    if (_dragging || _scrolling || _palm || _dragLockedHeld) {
+      return const [];
+    }
+    if (_touches.length == 1 &&
+        t - _downT >= dragHoldMs &&
+        _travel <= dragSlopPx) {
+      _maybeDrag = false;
+      _dragging = true;
+      return const [OutDown(buttonLeft)];
     }
     return const [];
   }
