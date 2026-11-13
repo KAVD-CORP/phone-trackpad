@@ -99,4 +99,47 @@ class SecureSender {
         dx: dx.clamp(-32768, 32767),
         dy: dy.clamp(-32768, 32767),
       ));
+
+  /// Keyboard mode (ADR-0005): typed characters as one TEXT chunk.
+  /// Longer runs must be split by the caller ([maxTextChunk]).
+  void sendText(String text) {
+    if (text.isEmpty) return;
+    _send(bridge.bridgeSealText(
+      key: _phoneKey.toList(),
+      session: _session,
+      seq: _seq,
+      text: text,
+    ));
+  }
+
+  /// Keyboard mode (ADR-0005): one KEY event, `usage` is a USB HID usage,
+  /// `modifiers` a bitmask of `Hid.mod*`. Held keys are guarded on the
+  /// desktop, but the phone still re-sends `up` redundantly like BUTTON_UP.
+  void sendKey(int usage, int modifiers, bool down) {
+    final bytes = bridge.bridgeSealKey(
+      key: _phoneKey.toList(),
+      session: _session,
+      seq: _seq,
+      usage: usage,
+      modifiers: modifiers,
+      down: down,
+    );
+    _send(bytes);
+    if (!down) {
+      // Redundant release against a dropped KEY up.
+      _send(bridge.bridgeSealKey(
+        key: _phoneKey.toList(),
+        session: _session,
+        seq: _seq,
+        usage: usage,
+        modifiers: modifiers,
+        down: false,
+      ));
+    }
+  }
 }
+
+/// Max UTF-8 characters per TEXT chunk; matches `MAX_TEXT_LEN` in
+/// `trackpad-core`. The bridge truncates defensively, splitting here keeps
+/// every chunk on one datagram.
+const int maxTextChunk = 512;

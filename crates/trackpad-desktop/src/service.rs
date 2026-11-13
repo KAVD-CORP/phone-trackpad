@@ -8,6 +8,8 @@
 //! - [`ButtonGuard`] tracks held buttons and releases them on session
 //!   change or after [`SILENCE_TIMEOUT_MS`] without packets, so a dropped
 //!   BUTTON_UP or a dead phone can never leave the mouse stuck down.
+//! - [`KeyGuard`] does the same for held keyboard modifiers (ADR-0005):
+//!   a lost KEY up releases on silence or session change.
 //! - Malformed packets are logged and ignored, never fatal.
 
 use crate::InputInjector;
@@ -127,6 +129,61 @@ impl ButtonGuard {
     }
 }
 
+/// Tracks held keyboard modifiers (ADR-0005) with millisecond timestamps.
+/// Mirrors [`ButtonGuard`]: a KEY up or a dead phone can never leave a
+/// modifier stuck down. Held entries are `(usage, modifiers)` pairs.
+#[derive(Debug, Default)]
+pub struct KeyGuard {
+    held: Vec<(u16, u8)>,
+    last_activity_ms: u64,
+}
+
+/// Maximum keys the guard tracks before forgetting the oldest (bounded
+/// memory against a hostile sender).
+const KEY_GUARD_MAX: usize = 8;
+
+impl KeyGuard {
+    /// A new session started: forget old state, return previously held
+    /// keys so the caller can release them immediately.
+    pub fn new_session(&mut self, now_ms: u64) -> Vec<(u16, u8)> {
+        self.last_activity_ms = now_ms;
+        self.take_held()
+    }
+
+    pub fn note_down(&mut self, usage: u16, modifiers: u8, now_ms: u64) {
+        self.last_activity_ms = now_ms;
+        if !self.held.iter().any(|(u, _)| *u == usage) {
+            if self.held.len() >= KEY_GUARD_MAX {
+                self.held.remove(0);
+            }
+            self.held.push((usage, modifiers));
+        }
+    }
+
+    pub fn note_up(&mut self, usage: u16, now_ms: u64) {
+        self.last_activity_ms = now_ms;
+        self.held.retain(|(u, _)| *u != usage);
+    }
+
+    pub fn note_activity(&mut self, now_ms: u64) {
+        self.last_activity_ms = now_ms;
+    }
+
+    /// Keys to release because the session went silent. Idempotent:
+    /// each key is returned at most once until pressed again.
+    pub fn releases_due(&mut self, now_ms: u64) -> Vec<(u16, u8)> {
+        if now_ms.saturating_sub(self.last_activity_ms) >= SILENCE_TIMEOUT_MS {
+            self.take_held()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn take_held(&mut self) -> Vec<(u16, u8)> {
+        std::mem::take(&mut self.held)
+    }
+}
+
 /// Per-process session state: one phone controls at a time in Phase 2.
 /// A new `session_id` means reconnect (or a different phone): held buttons
 /// are released and the coalescer is dropped, never carried across.
@@ -134,6 +191,7 @@ pub struct SessionState {
     pub session_id: Option<u64>,
     pub coalescer: Coalescer,
     pub guard: ButtonGuard,
+    pub key_guard: KeyGuard,
     secure: Option<SecureChannel>,
     /// Diagnostics: accepted vs dropped-secure datagrams.
     pub rx_ok: u64,
@@ -153,9 +211,19 @@ impl SessionState {
             session_id: None,
             coalescer: Coalescer::default(),
             guard: ButtonGuard::default(),
+            key_guard: KeyGuard::default(),
             secure: None,
             rx_ok: 0,
             rx_drop: 0,
+        }
+    }
+
+    /// Release every key the guard believes is held (rekey, revoke,
+    /// session change, silence). Emits KEY up with the stored modifiers
+    /// so the desktop unwinds exactly what it pressed.
+    pub fn release_held_keys(&mut self, injector: &mut (dyn InputInjector + '_)) {
+        for (usage, modifiers) in self.key_guard.new_session(0) {
+            injector.key(usage, modifiers, trackpad_core::key::STATE_UP);
         }
     }
 
@@ -172,6 +240,7 @@ impl SessionState {
         for b in [button::LEFT, button::RIGHT, button::MIDDLE] {
             injector.button_up(b);
         }
+        self.release_held_keys(injector);
         self.coalescer = Coalescer::default();
         self.secure = Some(SecureChannel {
             peer,
@@ -186,6 +255,7 @@ impl SessionState {
         for b in [button::LEFT, button::RIGHT, button::MIDDLE] {
             injector.button_up(b);
         }
+        self.release_held_keys(injector);
         self.coalescer = Coalescer::default();
         self.secure = None;
     }
@@ -206,6 +276,9 @@ impl SessionState {
         if self.session_id != Some(session_id) {
             for b in self.guard.new_session(now_ms) {
                 injector.button_up(b);
+            }
+            for (usage, modifiers) in self.key_guard.new_session(now_ms) {
+                injector.key(usage, modifiers, trackpad_core::key::STATE_UP);
             }
             self.coalescer = Coalescer::default();
             self.session_id = Some(session_id);
@@ -244,6 +317,27 @@ impl SessionState {
                 self.guard.note_up(b, now_ms);
                 self.flush(injector);
                 injector.button_up(b);
+                None
+            }
+            Message::Text { text } => {
+                self.key_guard.note_activity(now_ms);
+                self.flush(injector);
+                injector.text(&text);
+                None
+            }
+            Message::Key {
+                usage,
+                modifiers,
+                state,
+            } => {
+                self.key_guard.note_activity(now_ms);
+                self.flush(injector);
+                if state == trackpad_core::key::STATE_DOWN {
+                    self.key_guard.note_down(usage, modifiers, now_ms);
+                } else {
+                    self.key_guard.note_up(usage, now_ms);
+                }
+                injector.key(usage, modifiers, state);
                 None
             }
             Message::Pong { .. } => {
@@ -324,12 +418,15 @@ impl SessionState {
     }
 
     /// Enforce the silence timeout. Call on every tick. Returns released
-    /// buttons so the service can log them.
+    /// buttons so the service can log them. Held keys release silently.
     pub fn check_silence(
         &mut self,
         now_ms: u64,
         injector: &mut (dyn InputInjector + '_),
     ) -> Vec<u8> {
+        for (usage, modifiers) in self.key_guard.releases_due(now_ms) {
+            injector.key(usage, modifiers, trackpad_core::key::STATE_UP);
+        }
         let mut released = Vec::new();
         for b in self.guard.releases_due(now_ms) {
             injector.button_up(b);
@@ -760,6 +857,105 @@ mod tests {
     }
 
     #[test]
+    fn key_guard_releases_on_silence_once() {
+        let mut g = KeyGuard::default();
+        g.note_down(0xE1, trackpad_core::key::MOD_SHIFT, 1000);
+        assert!(g.releases_due(1499).is_empty());
+        assert_eq!(
+            g.releases_due(1500),
+            vec![(0xE1, trackpad_core::key::MOD_SHIFT)]
+        );
+        assert!(g.releases_due(9999).is_empty());
+        g.note_down(0xE1, 0, 1000);
+        g.note_up(0xE1, 1100);
+        assert!(g.releases_due(9999).is_empty());
+    }
+
+    #[test]
+    fn session_change_releases_held_keys() {
+        let mut inj = MockInjector::default();
+        let mut st = SessionState::new();
+        st.on_packet(
+            11,
+            Message::Key {
+                usage: 0xE1,
+                modifiers: trackpad_core::key::MOD_SHIFT,
+                state: trackpad_core::key::STATE_DOWN,
+            },
+            0,
+            &mut inj,
+        );
+        assert_eq!(inj.key_downs, 1);
+        // Phone died holding Shift; a new session arrives: stuck key released.
+        st.on_packet(99, Message::Text { text: "a".into() }, 10, &mut inj);
+        assert_eq!(inj.key_ups, 1);
+        assert_eq!(inj.typed, "a");
+        assert!(st.key_guard.held.is_empty());
+    }
+
+    #[test]
+    fn silence_timeout_releases_held_keys() {
+        let mut inj = MockInjector::default();
+        let mut st = SessionState::new();
+        st.on_packet(
+            11,
+            Message::Key {
+                usage: 0xE1,
+                modifiers: 0,
+                state: trackpad_core::key::STATE_DOWN,
+            },
+            0,
+            &mut inj,
+        );
+        assert_eq!(st.check_silence(100, &mut inj), Vec::<u8>::new());
+        assert_eq!(inj.key_ups, 0);
+        st.check_silence(SILENCE_TIMEOUT_MS, &mut inj);
+        assert_eq!(inj.key_ups, 1);
+        assert!(st.key_guard.held.is_empty());
+    }
+
+    #[test]
+    fn text_and_key_are_injected_in_order() {
+        let mut inj = MockInjector::default();
+        let mut st = SessionState::new();
+        st.on_packet(
+            11,
+            Message::Text { text: "h".into() },
+            0,
+            &mut inj,
+        );
+        st.on_packet(
+            11,
+            Message::Key {
+                usage: trackpad_core::key::usage::ENTER,
+                modifiers: 0,
+                state: trackpad_core::key::STATE_DOWN,
+            },
+            1,
+            &mut inj,
+        );
+        st.on_packet(
+            11,
+            Message::Key {
+                usage: trackpad_core::key::usage::ENTER,
+                modifiers: 0,
+                state: trackpad_core::key::STATE_UP,
+            },
+            2,
+            &mut inj,
+        );
+        st.on_packet(
+            11,
+            Message::Text { text: "i".into() },
+            3,
+            &mut inj,
+        );
+        assert_eq!(inj.typed, "hi");
+        assert_eq!((inj.key_downs, inj.key_ups), (1, 1));
+        assert!(st.key_guard.held.is_empty());
+    }
+
+    #[test]
     fn secure_ping_gets_encrypted_pong() {
         use trackpad_core::crypto::{open, seal};
         let (keys, peer) = secure_pair();
@@ -789,6 +985,28 @@ mod tests {
         st.clear_secure(&mut inj);
         assert_eq!(inj.held, 0);
         assert!(st.secure_peer().is_none());
+    }
+
+    #[test]
+    fn rekey_releases_held_keys_too() {
+        let (keys, peer) = secure_pair();
+        let mut inj = MockInjector::default();
+        let mut st = SessionState::new();
+        st.set_secure(peer, keys.clone(), &mut inj);
+        st.on_packet(
+            5,
+            Message::Key {
+                usage: 0xE1,
+                modifiers: 0,
+                state: trackpad_core::key::STATE_DOWN,
+            },
+            0,
+            &mut inj,
+        );
+        assert_eq!(inj.key_downs, 1);
+        st.set_secure(peer, keys.clone(), &mut inj);
+        assert_eq!(inj.key_ups, 1); // stuck KEY down got its UP on rekey
+        assert!(st.key_guard.held.is_empty());
     }
 
     #[test]

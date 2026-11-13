@@ -144,6 +144,45 @@ pub fn bridge_seal_button(key: Vec<u8>, session: u64, seq: u64, button: u8, down
     seal_checked(&key, session, seq, msg)
 }
 
+/// Keyboard mode (ADR-0005): seal one TEXT chunk (max 512 UTF-8 bytes).
+#[frb(sync)]
+pub fn bridge_seal_text(key: Vec<u8>, session: u64, seq: u64, text: String) -> Vec<u8> {
+    let truncated: String = text.chars().take(trackpad_core::MAX_TEXT_LEN).collect();
+    seal_checked(
+        &key,
+        session,
+        seq,
+        trackpad_core::Message::Text { text: truncated },
+    )
+}
+
+/// Keyboard mode (ADR-0005): seal one KEY event. `usage` is a USB HID
+/// keyboard usage, `modifiers` a `key::MOD_*` bitmask.
+#[frb(sync)]
+pub fn bridge_seal_key(
+    key: Vec<u8>,
+    session: u64,
+    seq: u64,
+    usage: u16,
+    modifiers: u8,
+    down: bool,
+) -> Vec<u8> {
+    seal_checked(
+        &key,
+        session,
+        seq,
+        trackpad_core::Message::Key {
+            usage,
+            modifiers,
+            state: if down {
+                trackpad_core::key::STATE_DOWN
+            } else {
+                trackpad_core::key::STATE_UP
+            },
+        },
+    )
+}
+
 #[frb(sync)]
 pub fn bridge_seal_ping(key: Vec<u8>, session: u64, seq: u64, timestamp_ms: u64) -> Vec<u8> {
     seal_checked(
@@ -194,6 +233,16 @@ pub fn bridge_open(key: Vec<u8>, packet: Vec<u8>) -> OpenOut {
         trackpad_core::Message::ButtonDown { button } => (0x05, button as i64, 0),
         trackpad_core::Message::ButtonUp { button } => (0x06, button as i64, 0),
         trackpad_core::Message::Scroll { dx, dy } => (0x07, dx as i64, dy as i64),
+        trackpad_core::Message::Text { text } => (
+            0x08,
+            text.len() as i64,
+            0,
+        ),
+        trackpad_core::Message::Key { usage, modifiers, state } => (
+            0x09,
+            usage as i64,
+            ((modifiers as i64) << 8) | state as i64,
+        ),
     };
     OpenOut {
         ok: true,
@@ -553,6 +602,23 @@ mod tests {
     #[test]
     fn bridge_links_core() {
         assert!(bridge_hello().contains("trackpad-core hello"));
+    }
+
+    #[test]
+    fn text_and_key_bridge_round_trip() {
+        let keys = derive_udp_keys(b"test-handshake-hash-seed").expect("keys");
+        let pkt = bridge_seal_text(keys.phone_key.to_vec(), 5, 9, "héllo".to_string());
+        let out = bridge_open(keys.phone_key.to_vec(), pkt);
+        assert!(out.ok, "open failed: {}", out.error);
+        assert_eq!(out.msg_type, 0x08);
+        assert_eq!(out.a, "héllo".len() as i64); // UTF-8 byte length
+
+        let pkt = bridge_seal_key(keys.phone_key.to_vec(), 5, 10, 0x28, 0x01, true);
+        let out = bridge_open(keys.phone_key.to_vec(), pkt);
+        assert!(out.ok, "open failed: {}", out.error);
+        assert_eq!(out.msg_type, 0x09);
+        assert_eq!(out.a, 0x28); // usage
+        assert_eq!(out.b, (0x01 << 8) | 0x01); // modifiers | state
     }
 
     #[test]

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'discovery.dart';
+import 'mode_select_screen.dart';
 import 'session.dart';
-import 'trackpad_screen.dart';
 import 'src/rust/api.dart/frb_generated.dart';
 
 void main() async {
@@ -52,7 +52,7 @@ class _ReconnectScreenState extends State<ReconnectScreen> {
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => TrackpadScreen(sessions: widget.sessions, session: session),
+          builder: (_) => ModeSelectScreen(sessions: widget.sessions, session: session),
         ),
       );
       setState(() => _status = '');
@@ -136,11 +136,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  Future<void> _openTrackpad(LiveSession session) async {
+  Future<void> _openModeSelect(LiveSession session) async {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TrackpadScreen(sessions: widget.sessions, session: session),
+        builder: (_) => ModeSelectScreen(sessions: widget.sessions, session: session),
       ),
     );
   }
@@ -159,7 +159,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               label: const Text('Scan pairing code'),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => ScanScreen(sessions: widget.sessions, onPaired: _openTrackpad),
+                  builder: (_) => ScanScreen(sessions: widget.sessions, onPaired: _openModeSelect),
                 ),
               ),
             ),
@@ -182,7 +182,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     builder: (_) => CodeScreen(
                       sessions: widget.sessions,
                       computer: c,
-                      onPaired: _openTrackpad,
+                      onPaired: _openModeSelect,
                     ),
                   ),
                 ),

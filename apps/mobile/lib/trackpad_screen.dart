@@ -3,66 +3,62 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'gesture.dart';
+import 'mode_select_screen.dart';
 import 'net.dart';
 import 'session.dart';
 
-/// Phase 4 trackpad screen: gesture engine → sealed UDP sender.
+/// Phase 4 trackpad screen: gesture engine → sealed UDP sender. Shown from
+/// the mode selector, which owns and connects the shared sender.
 class TrackpadScreen extends StatefulWidget {
   final SessionManager sessions;
   final LiveSession session;
+  final SecureSender sender;
+  final String status;
 
-  const TrackpadScreen({super.key, required this.sessions, required this.session});
+  const TrackpadScreen({
+    super.key,
+    required this.sessions,
+    required this.session,
+    required this.sender,
+    this.status = 'Connecting…',
+  });
 
   @override
   State<TrackpadScreen> createState() => _TrackpadScreenState();
 }
 
 class _TrackpadScreenState extends State<TrackpadScreen> {
-  final _sender = SecureSender();
   final _settings = TrackpadSettings();
   late GestureEngine _engine = GestureEngine(_settings);
-  String _status = 'Connecting…';
+  late String _status = widget.status;
   Timer? _holdTimer;
 
   @override
   void initState() {
     super.initState();
-    final s = widget.session;
-    _sender
-        .connect(
-      host: s.computer.host,
-      port: s.computer.udpPort,
-      phoneKey: s.phoneKey,
-      desktopKey: s.desktopKey,
-      session: s.sessionId,
-    )
-        .then((_) => setState(() => _status = 'Connected to ${s.computer.name}'))
-        .catchError((Object e) {
-      setState(() => _status = 'Could not reach ${s.computer.name} ($e)');
-    });
+    setState(() => _status = widget.status);
   }
 
   @override
   void dispose() {
     _holdTimer?.cancel();
-    _sender.close();
     super.dispose();
   }
 
   void _emit(List<GestureOut> outs) {
-    if (!_sender.isReady) return;
+    if (!widget.sender.isReady) return;
     for (final o in outs) {
       switch (o) {
         case OutMove(dx: final dx, dy: final dy):
-          _sender.sendMove(dx.toDouble(), dy.toDouble());
+          widget.sender.sendMove(dx.toDouble(), dy.toDouble());
         case OutScroll(dx: final dx, dy: final dy):
-          _sender.sendScroll(dx, dy);
+          widget.sender.sendScroll(dx, dy);
         case OutClick(button: final b):
-          _sender.sendClick(b);
+          widget.sender.sendClick(b);
         case OutDown(button: final b):
-          _sender.sendButton(b, true);
+          widget.sender.sendButton(b, true);
         case OutUp(button: final b):
-          _sender.sendButton(b, false);
+          widget.sender.sendButton(b, false);
       }
     }
   }
@@ -110,6 +106,11 @@ class _TrackpadScreenState extends State<TrackpadScreen> {
             icon: const Icon(Icons.tune),
             tooltip: 'Pointer settings',
             onPressed: _openSettings,
+          ),
+          IconButton(
+            icon: const Icon(Icons.keyboard),
+            tooltip: 'Switch to keyboard',
+            onPressed: () => Navigator.of(context).pop(),
           ),
           IconButton(
             icon: const Icon(Icons.link_off),

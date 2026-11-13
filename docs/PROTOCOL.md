@@ -116,7 +116,11 @@ Desktop advertises `<name>._wptrackpad._tcp.local` with TXT `ver=2, udp=<port>, 
 | `BUTTON_DOWN` | `0x05` | `button:u8` | UDP/TCP | Press and hold button (drag gesture) |
 | `BUTTON_UP` | `0x06` | `button:u8` | UDP/TCP | Release held button |
 | `SCROLL` | `0x07` | `dx:i16, dy:i16` | UDP/TCP | Two-finger scroll; desktop converts to wheel notches |
+| `TEXT` | `0x08` | UTF-8 bytes (1..512) | UDP/TCP | Keyboard mode (ADR-0005): typed characters, injected verbatim as Unicode input; senders split longer runs at 512 bytes |
+| `KEY` | `0x09` | `usage:u16, modifiers:u8, state:u8` | UDP/TCP | Keyboard mode (ADR-0005): one key event. `usage` is a USB HID keyboard usage (page 0x07), `modifiers` bitmask (bit 0 Shift, 1 Ctrl, 2 Alt, 3 Meta), `state` 0=up / 1=down. The desktop maps usage → platform key |
 
 - **Coalescing**: Moves and scrolls accumulate in `Coalescer` and flush every 8 ms to prevent event queue saturation.
 - **ButtonGuard**: Desktop automatically releases any held buttons if session changes or if silence exceeds 500 ms (`SILENCE_TIMEOUT_MS`).
+- **KeyGuard**: Same rule for held keyboard modifiers (ADR-0005). A lost KEY up releases on session change or after 500 ms of silence. Senders carry the sticky modifier bitmask on both the down and the up, and re-assert it on the next key.
 - **Scroll Accumulation**: 40 px per 120-unit standard OS wheel notch (`ScrollAccum`). Natural scrolling applied sender-side.
+- **Datagram size**: `MAX_PACKET_LEN` is 1024 bytes (header 18 + TEXT payload up to 512 + envelope headroom). Anything larger is rejected before parsing.
