@@ -83,7 +83,7 @@
 </head>
 <body>
 <div id="bar">Phone Trackpad</div>
-<div id="pad">Drag to move &middot; tap to click<br>Two fingers: tap = right click, drag = scroll<br>Three-finger tap = middle click</div>
+<div id="pad">Drag to move &middot; tap to click<br>Press, hold still, then drag = drag items<br>Two fingers: tap = right click, drag = scroll<br>Three-finger tap = middle click</div>
 <div id="modes">
   <button id="mPad" class="on">Trackpad</button>
   <button id="mKbd">Keyboard</button>
@@ -286,8 +286,15 @@ pad.addEventListener('pointerdown', (e) => {
     Math.abs(e.clientX - lastTapX) <= DBL_PX && Math.abs(e.clientY - lastTapY) <= DBL_PX;
   noTap = false; dragging = false; remX = 0; remY = 0;
   fingers.get(e.pointerId).anchor = { x: e.clientX, y: e.clientY, t };
+  // Press and hold still = drag intent: the button goes down while the
+  // finger sits still, moves then drag the item, lift releases it. The
+  // travel check at fire time keeps a finger that is already moving on
+  // normal cursor duty (no drag).
+  const heldId = e.pointerId;
   setTimeout(() => {
-    if (maybeDrag && !dragging && fingers.size === 1) {
+    const f = fingers.get(heldId);
+    if (f && fingers.size === 1 && !dragging && !scrolling && !threeTap &&
+        f.travel <= SLOP_PX) {
       maybeDrag = false; dragging = true;
       send([{ t: 'down', b: 0 }]);
     }

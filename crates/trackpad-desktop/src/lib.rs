@@ -625,4 +625,29 @@ mod tests {
     fn hello_links_core() {
         assert!(hello().contains("trackpad-core hello"));
     }
+
+    /// Manual probe (not part of CI): drives the real `WindowsInjector`
+    /// through a left-button drag (DOWN, relative moves, UP) so an
+    /// orchestrator can point the cursor at a real window title bar and
+    /// check that the window actually moved.
+    ///
+    /// Run: cargo test -p trackpad-desktop drag_probe -- --ignored --nocapture
+    /// Give it ~2 s after starting to place the cursor first.
+    #[test]
+    #[ignore]
+    fn drag_probe_left_holds_and_moves() {
+        #[cfg(windows)]
+        {
+            use std::thread::sleep;
+            use std::time::Duration;
+            let mut inj = WindowsInjector::default();
+            sleep(Duration::from_secs(2)); // orchestrator positions the cursor
+            inj.button_down(0);
+            for _ in 0..50 {
+                inj.move_relative(5, 3);
+                sleep(Duration::from_millis(12));
+            }
+            inj.button_up(0);
+        }
+    }
 }
