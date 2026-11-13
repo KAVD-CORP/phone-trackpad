@@ -1,42 +1,34 @@
-# Mobile app (Phase 4)
+# Mobile app
 
-Flutter `3.35.4` / Dart `>=3.9.0`. Pinned in root `.flutter-version`.
-Screens: onboarding/discovery, QR scan, short-code entry, trackpad,
-settings. Crypto runs in Rust via flutter_rust_bridge (same core).
+Shared Flutter app for iOS and Android: discovery, QR/short-code pairing,
+trackpad and settings. Flutter **3.35.4**, Dart **3.9.2**, FRB **2.13.0**,
+Rust **1.90.0**. The platform folders are committed; do not regenerate them.
 
-## First-time setup (generates ios/ + android/ folders)
+See [iPhone setup, signing and testing](../../docs/iphone-sideload.md) for the
+complete Mac/iPhone procedure and validation limits.
 
-The repo tracks `lib/`, `test/`, `pubspec.yaml` only. Run once:
+From the repository root:
 
-```powershell
+```bash
+cargo build --locked -p trackpad-bridge
 cd apps/mobile
-flutter create --platforms=ios,android --project-name trackpad_mobile .
 flutter pub get
-```
-
-## Regenerate the Rust bindings (after touching `crates/trackpad-bridge`)
-
-```powershell
-# from the repo root
-flutter_rust_bridge_codegen generate   # pinned 2.13.0, see flutter_rust_bridge.yaml
-```
-
-CI fails if the generated files (`lib/src/rust/`,
-`crates/trackpad-bridge/src/frb_generated.rs`) are stale.
-
-## iOS / Android keys (add after flutter create)
-
-`ios/Runner/Info.plist` additions: `NSLocalNetworkUsageDescription`,
-`NSBonjourServices: [_wptrackpad._tcp]`, `NSCameraUsageDescription`.
-`android/.../AndroidManifest.xml`: `CHANGE_WIFI_MULTICAST_STATE`, `CAMERA`.
-
-## Run
-
-```powershell
-cd apps/mobile
 flutter analyze
-flutter test   # gesture + widget + FFI smoke (needs target/debug/trackpad_bridge.dll on PATH)
-flutter run   # iPhone + Windows host on the same Wi-Fi; scan the desktop QR
+# macOS/Linux host FFI tests (use the equivalent environment variable on Windows):
+FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR="$PWD/../../target/debug" flutter test
+flutter build ios --simulator --debug
+flutter run -d <iphone-or-simulator-id>
 ```
 
-Keep the phone awake on the trackpad screen. No input is sent while idle.
+The iOS Xcode build compiles and links Rust automatically. The host `cargo build`
+above is for Flutter's FFI tests, not for the iOS app.
+
+Regenerate bindings only after bridge API changes, from the repository root:
+
+```bash
+cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
+flutter_rust_bridge_codegen generate
+```
+
+Generated bindings live in `lib/src/rust/api.dart/` (the existing directory name)
+and `crates/trackpad-bridge/src/frb_generated.rs`. Keep both sides on 2.13.0.

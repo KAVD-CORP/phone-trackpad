@@ -1,0 +1,45 @@
+name: iOS compilation
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'crates/trackpad-bridge/**'
+      - 'crates/trackpad-core/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - '.flutter-version'
+      - 'tools/test-ios-build.py'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.90.0'
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - run: python3 tools/test-ios-build.py
+      - run: cargo build --locked -p trackpad-bridge
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: flutter analyze
+        working-directory: apps/mobile
+      - run: FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR="$GITHUB_WORKSPACE/target/debug" flutter test
+        working-directory: apps/mobile
+      - run: flutter build ios --simulator --debug
+        working-directory: apps/mobile
+      - run: flutter build ios --release --no-codesign
+        working-directory: apps/mobile
+      - name: Verify Rust FFI exports in device executable
+        run: |
+          nm -gU build/ios/iphoneos/Runner.app/Runner | grep -q ' _frb_get_rust_content_hash$'
+          nm -gU build/ios/iphoneos/Runner.app/Runner | grep -q ' _frb_pde_ffi_dispatcher_primary$'
+        working-directory: apps/mobile

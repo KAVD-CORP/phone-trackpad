@@ -4,11 +4,12 @@ import 'package:trackpad_mobile/src/rust/api.dart/frb_generated.dart';
 
 /// FFI smoke test: loads the real compiled Rust core through the generated
 /// FRB bindings and round-trips crypto. This is the exact code path the
-/// phone uses (same crate, same bindings); only the .so packaging for
-/// iOS/Android differs (Phase 5 store builds).
+/// phone uses (same crate, same bindings). iOS instead statically links the
+/// archive into Runner; this host test does not verify iOS linking.
 ///
 /// Requires the cdylib: `cargo build -p trackpad-bridge`, with
-/// `target/debug` on PATH so the loader finds `trackpad_bridge.dll`.
+/// FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR pointing at the repository
+/// `target/debug` directory (libtrackpad_bridge.dylib on macOS).
 void main() {
   test('FRB seal/open round trip through the real Rust core', () async {
     await RustLib.init();

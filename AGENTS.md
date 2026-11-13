@@ -35,7 +35,7 @@ No React Native. No Electron. No .NET host. No browser trackpad. No kernel drive
 ## Conventions
 
 - Protocol changes are a version bump, not a quiet extra byte.
-- Phone code lives in `apps/phone`. Desktop code lives in `apps/desktop`.
+- Phone code lives in `apps/mobile`. Desktop code lives in `apps/desktop`.
 - Conventional Commits. One phase per PR.
 - Before finishing: `npm test`. Once an app exists, also run its tests.
 

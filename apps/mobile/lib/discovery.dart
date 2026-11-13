@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:multicast_dns/multicast_dns.dart';
+import 'package:flutter/services.dart';
 
 /// A computer found on the LAN via mDNS.
 class FoundComputer {
@@ -31,7 +31,10 @@ class FoundComputer {
 /// Browse `_wptrackpad._tcp.local` for up to [timeout]. Returns whatever
 /// answered in time (possibly empty — mDNS is often blocked on guest Wi-Fi,
 /// in which case the QR carries the address instead).
-Future<List<FoundComputer>> browseComputers({Duration timeout = const Duration(seconds: 5)}) async {
+Future<List<FoundComputer>> browseComputers({
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  if (Platform.isIOS) return browseIosComputers(timeout: timeout);
   final client = MDnsClient();
   try {
     await client.start();
@@ -92,4 +95,62 @@ Future<List<FoundComputer>> browseComputers({Duration timeout = const Duration(s
   }
   client.stop();
   return found.values.toList();
+}
+
+/// Native Bonjour avoids iOS's restricted raw multicast entitlement.
+Future<List<FoundComputer>> browseIosComputers({
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  const channel = MethodChannel('com.kavd.phonetrackpad/bonjour');
+  try {
+    final rows = await channel.invokeListMethod<Object?>('browse', {
+      'timeoutMs': timeout.inMilliseconds,
+    });
+    final found = <FoundComputer>[];
+    for (final row in rows ?? const []) {
+      if (row is! Map) continue;
+      final name = row['name'];
+      final host = row['host'];
+      final tcp = row['tcpPort'];
+      final udp = row['udpPort'];
+      if (name is! String ||
+          host is! String ||
+          tcp is! int ||
+          udp is! int ||
+          tcp < 1 ||
+          tcp > 65535 ||
+          udp < 1 ||
+          udp > 65535) {
+        continue;
+      }
+      final address = InternetAddress.tryParse(host);
+      if (address == null ||
+          address.isLoopback ||
+          address.type != InternetAddressType.IPv4) {
+        continue;
+      }
+      Uint8List? fingerprint;
+      try {
+        final fp = row['fingerprint'];
+        if (fp is String) {
+          final decoded = base64Url.decode(base64.normalize(fp));
+          if (decoded.length == 32) fingerprint = decoded;
+        }
+      } on FormatException {
+        // Invalid identity data must never be used for short-code pairing.
+      }
+      found.add(
+        FoundComputer(
+          name: name,
+          address: address,
+          tcpPort: tcp,
+          udpPort: udp,
+          fingerprint: fingerprint,
+        ),
+      );
+    }
+    return found;
+  } on PlatformException {
+    return const [];
+  }
 }
