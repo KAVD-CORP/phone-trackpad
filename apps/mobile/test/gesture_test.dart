@@ -193,7 +193,7 @@ void main() {
     expect(out.whereType<OutScroll>(), isNotEmpty);
   });
 
-  test('tap-hold-drag emits down, moves, up in order', () {
+  test('tap-hold-drag emits nudge, down, moves, up in order', () {
     final e = GestureEngine();
     final out = run(e, [
       ['down', 1, 100, 100, 0],
@@ -204,9 +204,42 @@ void main() {
       ['up', 1, 131, 101, 600],
     ]);
     expect(out[0], const OutClick(buttonLeft));
-    expect(out[1], const OutDown(buttonLeft));
+    // The click was 420 ms ago: nudge breaks the OS double-click so a
+    // title-bar drag does not maximize the window.
+    expect(out[1], const OutMove(0, 6));
+    expect(out[2], const OutDown(buttonLeft));
     expect(out.last, const OutUp(buttonLeft));
     expect(out.whereType<OutMove>(), isNotEmpty);
+  });
+
+  test('double-tap-drag nudges before the button press', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['up', 1, 100, 100, 80], // tap: click
+      ['down', 1, 101, 101, 200], // re-press: drag candidate
+      ['move', 1, 4, 0, 220], // travel 4: still under slop
+      ['move', 1, 4, 0, 240], // travel 8: still under slop
+      ['move', 1, 4, 0, 260], // travel 12: engage drag
+      ['up', 1, 113, 101, 400],
+    ]);
+    final down = out.indexOf(const OutDown(buttonLeft));
+    expect(down, greaterThan(0));
+    expect(out[down - 1], const OutMove(0, 6));
+    expect(out.whereType<OutMove>(), isNotEmpty);
+    expect(out.last, const OutUp(buttonLeft));
+  });
+
+  test('drag engaged long after a click sends no nudge', () {
+    final e = GestureEngine();
+    final out = run(e, [
+      ['down', 1, 100, 100, 0],
+      ['up', 1, 100, 100, 80], // tap: click
+      ['down', 1, 101, 101, 1500], // well outside double-click time
+      ['tick', 0, 0, 0, 1800], // held past dragHoldMs
+      ['up', 1, 101, 101, 1900],
+    ]);
+    expect(out, [const OutClick(buttonLeft), const OutDown(buttonLeft), const OutUp(buttonLeft)]);
   });
 
   test('second quick press without hold is a second click, not a drag', () {
@@ -310,7 +343,8 @@ void main() {
       ['up', 1, 200, 200, 1060],
     ]);
     expect(out[0], const OutClick(buttonLeft));
-    expect(out[1], const OutDown(buttonLeft));
+    expect(out[1], const OutMove(0, 6)); // nudge: break OS double-click
+    expect(out[2], const OutDown(buttonLeft));
     expect(out.whereType<OutUp>(), [const OutUp(buttonLeft)]);
     expect(out.whereType<OutClick>(), [const OutClick(buttonLeft)]);
   });

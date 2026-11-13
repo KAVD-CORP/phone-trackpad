@@ -152,6 +152,20 @@ function send(msgs) {
   post('/api/input', { token, seq: seq++, msgs }).catch(() => {});
 }
 
+let lastClickT = -1e9;
+// Windows reads a second left press within ~500 ms at the same spot as
+// a double click: on a title bar that maximizes the window instead of
+// dragging it (text selection has no such side effect, which is why
+// double-tap-drag "worked" there). When a drag engages soon after a
+// click, nudge the cursor a few px first so the OS never sees the
+// double click. Nudging down keeps a title-bar grab inside HTCAPTION.
+function engageDrag() {
+  maybeDrag = false; dragging = true;
+  const msgs = now() - lastClickT <= 550 ? [{ t: 'move', dx: 0, dy: 6 }] : [];
+  msgs.push({ t: 'down', b: 0 });
+  send(msgs);
+}
+
 // ---- keyboard mode (ADR-0005) ----
 // HID usages mirrored from apps/mobile/lib/hid.dart and trackpad-core.
 const HID = {
@@ -298,8 +312,7 @@ pad.addEventListener('pointerdown', (e) => {
       // resting finger jitters a few px and must still count as held.
       const dx = f.x - f.anchor.x, dy = f.y - f.anchor.y;
       if (Math.hypot(dx, dy) <= SLOP_PX) {
-        maybeDrag = false; dragging = true;
-        send([{ t: 'down', b: 0 }]);
+        engageDrag();
       }
     }
   }, HOLD_MS);
@@ -319,7 +332,7 @@ pad.addEventListener('pointermove', (e) => {
   }
   if (fingers.size !== 1) return;
   if (maybeDrag && !dragging) {
-    if (f.travel > SLOP_PX) { maybeDrag = false; dragging = true; send([{ t: 'down', b: 0 }]); }
+    if (f.travel > SLOP_PX) { engageDrag(); }
     else return;
   }
   const x = dx + remX, y = dy + remY;
@@ -338,6 +351,7 @@ function up(e) {
     if (fingers.size !== 0) return;
     threeTap = false;
     if ((t - threeT0) <= TAP_MS && threeTravel <= TAP_PX * 2) {
+      lastClickT = t;
       send([{ t: 'click', b: 2 }]);
     }
     return;
@@ -345,7 +359,7 @@ function up(e) {
   if (scrolling && fingers.size < 2) {
     scrolling = false;
     const quick = (t - twoT0) <= TAP_MS && twoTravel <= TAP_PX * 2;
-    if (quick) send([{ t: 'click', b: 1 }]);
+    if (quick) { lastClickT = t; send([{ t: 'click', b: 1 }]); }
     return;
   }
   if (fingers.size !== 0 || scrolling) return;
@@ -355,6 +369,7 @@ function up(e) {
     maybeDrag = false;
     if (t - f.anchor.t <= TAP_MS && f.travel <= TAP_PX) {
       lastTapT = t; lastTapX = e.clientX; lastTapY = e.clientY;
+      lastClickT = t;
       send([{ t: 'click', b: 0 }]);
     }
     return;
@@ -362,6 +377,7 @@ function up(e) {
   const dt = t - f.anchor.t;
   if (dt <= TAP_MS && Math.abs(e.clientX - f.anchor.x) <= TAP_PX && Math.abs(e.clientY - f.anchor.y) <= TAP_PX) {
     lastTapT = t; lastTapX = e.clientX; lastTapY = e.clientY;
+    lastClickT = t;
     send([{ t: 'click', b: 0 }]);
   }
 }

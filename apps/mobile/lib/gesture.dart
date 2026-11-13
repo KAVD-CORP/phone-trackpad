@@ -168,6 +168,21 @@ class GestureEngine {
 
   int _lastTapT = -1000000;
   bool _maybeDrag = false;
+  /// When the last synthesized click went out. Windows treats a second
+  /// left press within ~500 ms at the same spot as a double click: on a
+  /// title bar that maximizes instead of dragging. See [_engageDown].
+  int _lastClickT = -1000000;
+
+  /// Emit the button-down that starts a drag, nudging the cursor a few
+  /// px first when a click just happened so the OS never reads the
+  /// press as a double click. Nudging down keeps a title-bar grab
+  /// inside HTCAPTION.
+  List<GestureOut> _engageDown(int t) {
+    if (t - _lastClickT <= 550) {
+      return const [OutMove(0, 6), OutDown(buttonLeft)];
+    }
+    return const [OutDown(buttonLeft)];
+  }
   bool _dragging = false;
   bool _dragLockedHeld = false;
 
@@ -292,7 +307,7 @@ class GestureEngine {
         _maybeDrag = false;
         _dragging = true;
         _lastMoveT = t;
-        return [const OutDown(buttonLeft), ..._gainMove(dx, dy, t)];
+        return [..._engageDown(t), ..._gainMove(dx, dy, t)];
       }
       return const [];
     }
@@ -330,7 +345,7 @@ class GestureEngine {
         _travel <= dragSlopPx) {
       _maybeDrag = false;
       _dragging = true;
-      return const [OutDown(buttonLeft)];
+      return _engageDown(t);
     }
     return const [];
   }
@@ -350,6 +365,7 @@ class GestureEngine {
       final dt = t - _threeDownT;
       final quick = dt <= tapMaxMs && _threeTravel <= tapMaxPx * 2;
       if (quick && settings.tapToClick) {
+        _lastClickT = t;
         return const [OutClick(buttonMiddle)];
       }
       return const [];
@@ -376,6 +392,7 @@ class GestureEngine {
         }
         if (quick && settings.tapToClick) {
           _lastTapT = -1000000; // two-finger tap is not a drag anchor
+          _lastClickT = t;
           return const [OutClick(buttonRight)];
         }
         return const [];
@@ -406,6 +423,7 @@ class GestureEngine {
         _lastTapT = t;
         _lastTapX = x;
         _lastTapY = y;
+        _lastClickT = t;
         return const [OutClick(buttonLeft)];
       }
       return const [];
@@ -420,6 +438,7 @@ class GestureEngine {
       _lastTapT = t;
       _lastTapX = x;
       _lastTapY = y;
+      _lastClickT = t;
       return const [OutClick(buttonLeft)];
     }
     return const [];
