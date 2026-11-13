@@ -358,6 +358,35 @@ fn json_to_message(v: &serde_json::Value) -> Option<Message> {
             dx: clamp_i16(v.get("dx")?.as_i64().unwrap_or(0)),
             dy: clamp_i16(v.get("dy")?.as_i64().unwrap_or(0)),
         }),
+        // Keyboard mode (ADR-0005). `s` must be 1..=512 UTF-8 bytes; `u`
+        // is a USB HID usage (0 is reserved), `m` the modifier bitmask.
+        "text" => {
+            let s = v.get("s")?.as_str()?;
+            if s.is_empty() || s.len() > trackpad_core::MAX_TEXT_LEN {
+                return None;
+            }
+            Some(Message::Text { text: s.to_string() })
+        }
+        "key" => {
+            let usage = v.get("u")?.as_u64()?;
+            if usage == 0 || usage > 0xFFFF {
+                return None;
+            }
+            let m = v.get("m").and_then(|m| m.as_u64()).unwrap_or(0);
+            if m > 0x0F {
+                return None;
+            }
+            let down = v.get("d")?.as_bool()?;
+            Some(Message::Key {
+                usage: usage as u16,
+                modifiers: m as u8,
+                state: if down {
+                    trackpad_core::key::STATE_DOWN
+                } else {
+                    trackpad_core::key::STATE_UP
+                },
+            })
+        }
         _ => None,
     }
 }
@@ -574,6 +603,55 @@ mod tests {
         assert_eq!(clamp_i16(99999), 32767);
         assert_eq!(clamp_i16(-99999), -32768);
         assert!(unhex("zz").is_err());
+        // Keyboard messages: shape, size, and value caps.
+        assert_eq!(
+            json_to_message(&serde_json::json!({"t": "text", "s": "hi"})),
+            Some(Message::Text { text: "hi".into() })
+        );
+        assert!(json_to_message(&serde_json::json!({"t": "text", "s": ""})).is_none());
+        let long = "x".repeat(trackpad_core::MAX_TEXT_LEN + 1);
+        assert!(json_to_message(&serde_json::json!({"t": "text", "s": long})).is_none());
+        assert_eq!(
+            json_to_message(&serde_json::json!({"t": "key", "u": 0x28, "m": 1, "d": true})),
+            Some(Message::Key {
+                usage: 0x28,
+                modifiers: 1,
+                state: trackpad_core::key::STATE_DOWN
+            })
+        );
+        assert!(json_to_message(&serde_json::json!({"t": "key", "u": 0, "m": 0, "d": true})).is_none());
+        assert!(json_to_message(&serde_json::json!({"t": "key", "u": 0x28, "m": 0x1F, "d": true})).is_none());
+        assert!(json_to_message(&serde_json::json!({"t": "key", "u": 70000, "m": 0, "d": true})).is_none());
+        assert!(json_to_message(&serde_json::json!({"t": "key", "u": 0x28, "m": 0})).is_none());
+    }
+
+    #[test]
+    fn text_and_key_apply_through_session_machine() {
+        let mut s = test_state(3000);
+        let (token, _) = pair(&mut s);
+        let shared = Arc::new(Mutex::new(s));
+        let good = input_body(
+            &token,
+            r#"[{"t":"text","s":"hi"},{"t":"key","u":28,"m":1,"d":true},{"t":"key","u":28,"m":1,"d":false}]"#,
+        );
+        assert!(apply_input(&shared, &good));
+        {
+            let mut g = shared.lock().expect("lock");
+            let sess = g.session.as_mut().expect("session");
+            let mock = sess.injector.as_mock().expect("mock injector in tests");
+            assert_eq!(mock.typed, "hi");
+            assert_eq!((mock.key_downs, mock.key_ups), (1, 1));
+            assert!(sess.state.key_guard.is_empty());
+        }
+        // Malformed keyboard message flags the batch; valid sibling applies.
+        let mixed = input_body(&token, r#"[{"t":"key","u":0,"m":0,"d":true},{"t":"text","s":"a"}]"#);
+        assert!(!apply_input(&shared, &mixed));
+        {
+            let mut g = shared.lock().expect("lock");
+            let sess = g.session.as_mut().expect("session");
+            let mock = sess.injector.as_mock().expect("mock");
+            assert_eq!(mock.typed, "hia");
+        }
     }
 
     fn http_roundtrip() {

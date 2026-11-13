@@ -45,11 +45,56 @@
   }
   #gate .err { color: #f26d6d; min-height: 20px; font-size: 14px; }
   #gate .hint { color: #a3a7ae; font-size: 13px; text-align: center; }
+  #modes { display: none; flex: none; margin: 0 12px 8px; gap: 8px; }
+  #modes button {
+    flex: 1; padding: 10px 0; font-size: 14px; font-weight: 600;
+    border-radius: 12px; border: 1px solid #2e3138;
+    background: #1e2024; color: #a3a7ae;
+  }
+  #modes button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+  #kbd {
+    display: none; flex: 1; flex-direction: column; gap: 8px;
+    margin: 0 12px calc(12px + env(safe-area-inset-bottom));
+    touch-action: auto; user-select: text; -webkit-user-select: text;
+  }
+  #kbd textarea {
+    flex: 1; width: 100%; min-height: 120px;
+    border: 1px solid #2e3138; border-radius: 16px; background: #1e2024;
+    color: #eceef1; font: inherit; padding: 12px; resize: none;
+  }
+  .chips { display: flex; gap: 6px; }
+  .chips button {
+    flex: 1; padding: 10px 0; font-size: 13px; font-weight: 600;
+    border-radius: 10px; border: 1px solid #2e3138;
+    background: #1e2024; color: #a3a7ae;
+  }
+  .chips button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .krow { display: flex; gap: 6px; }
+  .krow button {
+    flex: 1; padding: 12px 0; font-size: 14px; border-radius: 10px;
+    border: 1px solid #2e3138; background: #1e2024; color: #eceef1;
+  }
+  #fkeys { display: flex; gap: 6px; overflow-x: auto; touch-action: pan-x; }
+  #fkeys button {
+    flex: none; padding: 10px 14px; font-size: 13px; border-radius: 10px;
+    border: 1px solid #2e3138; background: #1e2024; color: #eceef1;
+  }
 </style>
 </head>
 <body>
 <div id="bar">Phone Trackpad</div>
 <div id="pad">Drag to move &middot; tap to click<br>Two fingers: tap = right click, drag = scroll<br>Three-finger tap = middle click</div>
+<div id="modes">
+  <button id="mPad" class="on">Trackpad</button>
+  <button id="mKbd">Keyboard</button>
+</div>
+<div id="kbd">
+  <div class="chips" id="mods"></div>
+  <textarea id="kbtext" placeholder="Type here &mdash; text lands on the computer" autocapitalize="sentences"></textarea>
+  <div class="krow" id="row1"></div>
+  <div class="krow" id="row2"></div>
+  <div id="fkeys"></div>
+</div>
 <div id="gate">
   <div style="font-size:18px;font-weight:650">Pair this browser</div>
   <div class="hint">On the computer: Phone Trackpad &rarr; “Browser code”.<br>Type the 6-digit code here. Trusted Wi-Fi only.</div>
@@ -85,6 +130,7 @@ document.getElementById('go').onclick = async () => {
     if (!r.ok) { err.textContent = 'Code rejected. Check it and try again.'; return; }
     token = r.token; seq = 0;
     document.getElementById('gate').style.display = 'none';
+    document.getElementById('modes').style.display = 'flex';
     bar.textContent = 'Connected — touch to move';
     bar.classList.add('live');
   } catch (e) {
@@ -105,6 +151,109 @@ function send(msgs) {
   if (!token || !msgs.length) return;
   post('/api/input', { token, seq: seq++, msgs }).catch(() => {});
 }
+
+// ---- keyboard mode (ADR-0005) ----
+// HID usages mirrored from apps/mobile/lib/hid.dart and trackpad-core.
+const HID = {
+  bksp: 0x2a, esc: 0x29, tab: 0x2b,
+  left: 0x50, right: 0x4f, down: 0x51, up: 0x52,
+  home: 0x4a, end: 0x4d, pgup: 0x4b, pgdn: 0x4e, del: 0x4c,
+};
+const MOD_DEFS = [ // [label, bit, HID usage (informational; the desktop
+  // presses/releases the modifiers around each key from the bitmask)]
+  ['Ctrl', 1, 0xe0], ['Alt', 2, 0xe2], ['Shift', 4, 0xe1], ['Meta', 8, 0xe3],
+];
+let mods = 0;
+let kbLast = '';
+const kbtext = document.getElementById('kbtext');
+
+// Batches are capped at 64 msgs server-side; stay well under.
+const BATCH = 60;
+
+function keyTap(usage) {
+  send([{ t: 'key', u: usage, m: mods, d: true }, { t: 'key', u: usage, m: mods, d: false }]);
+}
+
+function backspaces(n) {
+  const msgs = [];
+  for (let i = 0; i < n; i++) {
+    msgs.push({ t: 'key', u: HID.bksp, m: 0, d: true });
+    msgs.push({ t: 'key', u: HID.bksp, m: 0, d: false });
+  }
+  for (let i = 0; i < msgs.length; i += BATCH) send(msgs.slice(i, i + BATCH));
+}
+
+function typeChunk(s) {
+  // Chunk by code points so a surrogate pair never splits across batches.
+  const cps = [...s];
+  for (let i = 0; i < cps.length; i += BATCH) send([{ t: 'text', s: cps.slice(i, i + BATCH).join('') }]);
+}
+
+kbtext.addEventListener('input', () => {
+  const t = kbtext.value;
+  if (t.length > kbLast.length && t.startsWith(kbLast)) {
+    typeChunk(t.slice(kbLast.length));
+  } else if (t.length < kbLast.length && kbLast.startsWith(t)) {
+    backspaces(kbLast.length - t.length);
+  } else {
+    // Cursor moved or a selection was replaced: clear old, type new.
+    backspaces(kbLast.length);
+    typeChunk(t);
+  }
+  kbLast = t;
+});
+
+// Modifier chips: sticky bitmask carried on every KEY event.
+const modsEl = document.getElementById('mods');
+for (const [label, bit] of MOD_DEFS) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.onclick = () => {
+    mods ^= bit;
+    b.classList.toggle('on', mods & bit);
+  };
+  modsEl.appendChild(b);
+}
+
+function keyRow(el, defs) {
+  for (const [label, usage] of defs) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => keyTap(usage);
+    el.appendChild(b);
+  }
+}
+keyRow(document.getElementById('row1'), [
+  ['Esc', HID.esc], ['Tab', HID.tab],
+  ['←', HID.left], ['↑', HID.up], ['↓', HID.down], ['→', HID.right],
+]);
+keyRow(document.getElementById('row2'), [
+  ['Home', HID.home], ['End', HID.end], ['PgUp', HID.pgup],
+  ['PgDn', HID.pgdn], ['Del', HID.del],
+]);
+const fkeys = document.getElementById('fkeys');
+for (let n = 1; n <= 12; n++) {
+  const b = document.createElement('button');
+  b.textContent = 'F' + n;
+  b.onclick = () => keyTap(0x39 + n);
+  fkeys.appendChild(b);
+}
+
+// Mode switch: both modes ride the same browser session.
+let mode = 'pad';
+const barTexts = { pad: 'Connected — touch to move', kbd: 'Connected — type in the box' };
+function setMode(m) {
+  if (m === mode || !token) return;
+  mode = m;
+  document.getElementById('pad').style.display = m === 'pad' ? 'flex' : 'none';
+  document.getElementById('kbd').style.display = m === 'kbd' ? 'flex' : 'none';
+  document.getElementById('mPad').classList.toggle('on', m === 'pad');
+  document.getElementById('mKbd').classList.toggle('on', m === 'kbd');
+  bar.textContent = barTexts[m];
+  if (m === 'kbd') kbtext.focus();
+}
+document.getElementById('mPad').onclick = () => setMode('pad');
+document.getElementById('mKbd').onclick = () => setMode('kbd');
 
 // ---- gesture engine (single + two finger) ----
 const fingers = new Map(); // pointerId -> {x,y,t0,travel}

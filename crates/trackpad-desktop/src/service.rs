@@ -1,4 +1,4 @@
-//! Phase 2 UDP service loop.
+﻿//! Phase 2 UDP service loop.
 //!
 //! Invariants:
 //! - MOVE / SCROLL are lossy and coalesced: deltas arriving within one
@@ -177,6 +177,11 @@ impl KeyGuard {
         } else {
             Vec::new()
         }
+    }
+
+    /// True when nothing is held (test/diagnostics hook).
+    pub fn is_empty(&self) -> bool {
+        self.held.is_empty()
     }
 
     fn take_held(&mut self) -> Vec<(u16, u8)> {
@@ -890,7 +895,7 @@ mod tests {
         st.on_packet(99, Message::Text { text: "a".into() }, 10, &mut inj);
         assert_eq!(inj.key_ups, 1);
         assert_eq!(inj.typed, "a");
-        assert!(st.key_guard.held.is_empty());
+        assert!(st.key_guard.is_empty());
     }
 
     #[test]
@@ -911,7 +916,7 @@ mod tests {
         assert_eq!(inj.key_ups, 0);
         st.check_silence(SILENCE_TIMEOUT_MS, &mut inj);
         assert_eq!(inj.key_ups, 1);
-        assert!(st.key_guard.held.is_empty());
+        assert!(st.key_guard.is_empty());
     }
 
     #[test]
@@ -952,7 +957,7 @@ mod tests {
         );
         assert_eq!(inj.typed, "hi");
         assert_eq!((inj.key_downs, inj.key_ups), (1, 1));
-        assert!(st.key_guard.held.is_empty());
+        assert!(st.key_guard.is_empty());
     }
 
     #[test]
@@ -1006,7 +1011,7 @@ mod tests {
         assert_eq!(inj.key_downs, 1);
         st.set_secure(peer, keys.clone(), &mut inj);
         assert_eq!(inj.key_ups, 1); // stuck KEY down got its UP on rekey
-        assert!(st.key_guard.held.is_empty());
+        assert!(st.key_guard.is_empty());
     }
 
     #[test]
