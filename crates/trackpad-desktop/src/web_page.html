@@ -16,7 +16,7 @@
     font-family: -apple-system, system-ui, sans-serif; font-size: 15px;
     display: flex; flex-direction: column; overflow: hidden;
     touch-action: none; overscroll-behavior: none; user-select: none;
-    -webkit-user-select: none;
+    -webkit-user-select: none; -webkit-touch-callout: none;
   }
   #bar {
     padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
@@ -293,10 +293,14 @@ pad.addEventListener('pointerdown', (e) => {
   const heldId = e.pointerId;
   setTimeout(() => {
     const f = fingers.get(heldId);
-    if (f && fingers.size === 1 && !dragging && !scrolling && !threeTap &&
-        f.travel <= SLOP_PX) {
-      maybeDrag = false; dragging = true;
-      send([{ t: 'down', b: 0 }]);
+    if (f && fingers.size === 1 && !dragging && !scrolling && !threeTap) {
+      // Stillness measured from the anchor, not accumulated travel: a
+      // resting finger jitters a few px and must still count as held.
+      const dx = f.x - f.anchor.x, dy = f.y - f.anchor.y;
+      if (Math.hypot(dx, dy) <= SLOP_PX) {
+        maybeDrag = false; dragging = true;
+        send([{ t: 'down', b: 0 }]);
+      }
     }
   }, HOLD_MS);
 });
@@ -363,6 +367,10 @@ function up(e) {
 }
 pad.addEventListener('pointerup', up);
 pad.addEventListener('pointercancel', up);
+// Phone browsers cancel pointer events when a long press triggers a
+// native behavior (iOS callout/loupe, Android context menu). Suppress
+// those defaults on the pad only — keyboard mode needs native input.
+pad.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault());
 </script>
